@@ -96,8 +96,20 @@ const original = server.handleHttp.bind(server);
 // Los nombres los pone la oficina (Nicolás, 14-11-2026): aunque un servicio
 // mande otro "name", se ven como "Ali - Interacción", "Ali - Calificador" y
 // "Ali - Cierre".
+//
+// Los investigadores no se levantan del notebook (Nicolás, 14-11-2026): de
+// día siempre quedan "trabajando" (sentados). Lo que dicen llega como tarea
+// nueva y la página le pone el globo; cuando descansan, vuelven a repasar.
+const EN_ESCRITORIO = new Set(['competencia', 'anuncios', 'mercado']);
 const latido = server.store.heartbeat.bind(server.store);
-server.store.heartbeat = data => latido({ ...data, name: NOMBRES[data.agent] ?? data.name });
+server.store.heartbeat = data => {
+  const d = { ...data, name: NOMBRES[data.agent] ?? data.name };
+  if (EN_ESCRITORIO.has(d.agent) && d.state && !['working', 'sleeping', 'offline'].includes(d.state)) {
+    if (d.state !== 'speaking') d.task = `Repasando: ${temaAlAzar(d.agent)}`;
+    d.state = 'working';
+  }
+  return latido(d);
+};
 
 const LECTURA = new Set(['/api/info', '/api/agents', '/api/events', '/api/channels']);
 const ESCRITURA = new Set(['/api/heartbeat', '/api/act']);
@@ -127,12 +139,19 @@ server.handleHttp = async (req, res) => {
       return;
     }
     // Trabajo real: la rutina de estudio no lo pisa mientras dure.
-    const agente = await agenteDelAviso(req);
+    const aviso = await leerAviso(req);
+    const agente = typeof aviso?.agent === 'string' ? aviso.agent : null;
     if (agente) {
       ultimoReal.set(agente, Date.now());
       estudiando.delete(agente);
+      guardarEnHistorial(pathname, agente, aviso);
     }
     return original(req, res);
+  }
+
+  // Ficha de un agente: lo que hizo en las fechas pedidas (sin datos de clientes).
+  if (req.method === 'GET' && pathname === '/api/historial') {
+    return historial(url, res);
   }
 
   if (req.method !== 'GET') {
@@ -175,10 +194,63 @@ server.httpServer.prependListener('upgrade', (req, socket) => {
 });
 
 /**
+ * Historial (Nicolás, 14-11-2026): la oficina olvida al reiniciarse, así que
+ * cada trabajo real se guarda en el CRM web (oficina_registro) y la ficha de
+ * cada agente lo lee de ahí. Las conversaciones completas solo se ven en el
+ * CRM, con su clave: aquí llegan conteos.
+ */
+const CRM = (process.env.CRM_WEB_URL || 'https://marketing.aliminspa.cl').replace(/\/+$/, '');
+const esRepasoTexto = t => !t || /^(Repasando|Estudiando):/.test(t);
+
+function guardarEnHistorial(ruta, agente, aviso) {
+  if (!SECRETO || !NOMBRES[agente]) return;
+  let tipo = null;
+  let texto = null;
+  if (ruta === '/api/act' && aviso.action?.type === 'speak' && typeof aviso.action.message === 'string') {
+    tipo = 'dijo';
+    texto = aviso.action.message;
+  } else if (ruta === '/api/heartbeat' && aviso.state === 'working' && typeof aviso.task === 'string' && !esRepasoTexto(aviso.task)) {
+    tipo = 'tarea';
+    texto = aviso.task;
+  }
+  if (!tipo) return;
+  fetch(`${CRM}/api/webhooks/ia/oficina`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-ia-secret': SECRETO },
+    body: JSON.stringify({ agente, tipo, texto }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(error => console.warn('[oficina] No se pudo guardar en el historial:', error.message));
+}
+
+async function historial(url, res) {
+  const agente = url.searchParams.get('agente');
+  const responder = (codigo, cuerpo) => {
+    res.writeHead(codigo, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(cuerpo));
+  };
+  if (!NOMBRES[agente]) return responder(400, { error: 'Agente desconocido' });
+  const params = new URLSearchParams({ agente });
+  for (const k of ['desde', 'hasta', 'q']) {
+    const v = url.searchParams.get(k);
+    if (v) params.set(k, v.slice(0, 80));
+  }
+  try {
+    const r = await fetch(`${CRM}/api/webhooks/ia/oficina?${params}`, {
+      headers: { 'x-ia-secret': SECRETO },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) throw new Error(`el CRM respondió ${r.status}`);
+    responder(200, { ...(await r.json()), crm: `${CRM}/agentes-ia/historial` });
+  } catch (error) {
+    responder(502, { error: `No se pudo leer el historial: ${error.message}`, crm: `${CRM}/agentes-ia/historial` });
+  }
+}
+
+/**
  * El cuerpo del aviso se lee una sola vez: se guarda y se le devuelve al
  * servidor de Miniverse igual que llegó.
  */
-async function agenteDelAviso(req) {
+async function leerAviso(req) {
   const partes = [];
   for await (const p of req) partes.push(p);
   const cuerpo = Buffer.concat(partes);
@@ -188,7 +260,8 @@ async function agenteDelAviso(req) {
   req.on = copia.on.bind(copia);
   req.once = copia.once.bind(copia);
   try {
-    return JSON.parse(cuerpo.toString('utf8')).agent || null;
+    const aviso = JSON.parse(cuerpo.toString('utf8'));
+    return aviso && typeof aviso === 'object' ? aviso : null;
   } catch {
     return null;
   }
@@ -233,6 +306,10 @@ const estudiando = new Map();
 const pausa = new Map();
 const TRABAJO_REAL_MS = 90 * 1000;
 const azar = (min, max) => min + Math.random() * (max - min);
+function temaAlAzar(agente) {
+  const temas = TEMAS[agente] ?? ['temas de Alimin'];
+  return temas[Math.floor(Math.random() * temas.length)];
+}
 
 function esNoche() {
   const hora = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago', hour: '2-digit', hour12: false }));
@@ -261,6 +338,14 @@ function rutina() {
 
     const hasta = estudiando.get(a.agent);
     if (hasta && ahora < hasta) continue;
+
+    // Investigadores: repasan sentados en su puesto, cambiando de tema.
+    if (EN_ESCRITORIO.has(a.agent)) {
+      server.store.heartbeat({ agent: a.agent, name: a.name, state: 'working', task: `Repasando: ${temaAlAzar(a.agent)}` });
+      estudiando.set(a.agent, ahora + azar(40, 90) * 1000);
+      continue;
+    }
+
     if (hasta) {
       estudiando.delete(a.agent);
       pausa.set(a.agent, ahora + azar(20, 70) * 1000);
@@ -271,9 +356,7 @@ function rutina() {
       if (ahora - actual.lastSeen > DORMIR_MS / 2) server.store.heartbeat({ agent: a.agent, name: a.name, state: 'idle', task: null });
       continue;
     }
-    const temas = TEMAS[a.agent];
-    const tema = temas[Math.floor(Math.random() * temas.length)];
-    server.store.heartbeat({ agent: a.agent, name: a.name, state: 'thinking', task: `Estudiando: ${tema}` });
+    server.store.heartbeat({ agent: a.agent, name: a.name, state: 'thinking', task: `Estudiando: ${temaAlAzar(a.agent)}` });
     estudiando.set(a.agent, ahora + azar(30, 60) * 1000);
   }
 }

@@ -28,23 +28,8 @@
       line-height: 0;
       max-width: 100%;
     }
-    #miniverse-container canvas { max-width: 100%; height: auto; }
-    #tooltip {
-      position: fixed;
-      background: rgba(10, 18, 16, 0.92);
-      border: 1px solid #4caf50;
-      padding: 8px 12px;
-      border-radius: 4px;
-      font-size: 12px;
-      pointer-events: none;
-      display: none;
-      z-index: 100;
-      max-width: 240px;
-      line-height: 1.5;
-    }
-    #tooltip .name { color: #4caf50; font-weight: bold; }
-    #tooltip .state { color: #c9d6cf; }
-    #tooltip .task { color: #8fb8ff; }
+    /* Miniverse fija alto y ancho en línea: sin esto se achata al angostar la pantalla. */
+    #miniverse-container canvas { max-width: 100%; height: auto !important; }
     .status-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; font-size: 12px; color: #c9d6cf; }
     .status-bar .agent { display: flex; align-items: center; gap: 6px; }
     .status-bar .estado { color: #9bb3a8; }
@@ -63,11 +48,54 @@
     #registro time { color: #9bb3a8; }
     #registro b { color: #4caf50; }
     .nota { font-size: 11px; color: #6f8a7f; text-align: center; max-width: 640px; }
+    .status-bar .agent { cursor: pointer; }
+    .status-bar .agent:hover b { text-decoration: underline; }
+    #miniverse-container canvas { cursor: pointer; }
+
+    /* Ficha de un agente (al tocarlo en la oficina o en la barra de estado). */
+    #ficha { position: fixed; inset: 0; z-index: 200; display: none; }
+    #ficha.abierta { display: block; }
+    #ficha .fondo { position: absolute; inset: 0; background: rgba(5, 10, 9, 0.6); }
+    #ficha .panel {
+      position: absolute; top: 0; right: 0; height: 100%; width: min(460px, 100%);
+      background: #16241f; border-left: 2px solid #2b463c; padding: 18px 16px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    #ficha .cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    #ficha h2 { font-size: 16px; color: #4caf50; }
+    #ficha .rol { font-size: 12px; color: #9bb3a8; margin-top: 4px; line-height: 1.4; }
+    #ficha .ahora { font-size: 12px; color: #c9d6cf; }
+    #ficha .cerrar { background: none; border: 1px solid #2b463c; color: #c9d6cf; font: inherit; padding: 2px 8px; cursor: pointer; border-radius: 3px; }
+    #ficha .periodos { display: flex; flex-wrap: wrap; gap: 6px; }
+    #ficha button.periodo, #ficha .buscar button {
+      background: #0f1a17; border: 1px solid #2b463c; color: #c9d6cf; font: inherit; font-size: 12px; padding: 5px 9px; cursor: pointer; border-radius: 3px;
+    }
+    #ficha button.periodo.activo { background: #2d544c; border-color: #4caf50; color: #fff; }
+    #ficha .fechas { display: none; gap: 6px; align-items: center; font-size: 12px; color: #9bb3a8; }
+    #ficha .fechas.visible { display: flex; }
+    #ficha input { background: #0f1a17; border: 1px solid #2b463c; color: #e6efe9; font: inherit; font-size: 12px; padding: 5px 7px; border-radius: 3px; color-scheme: dark; }
+    #ficha .buscar { display: flex; gap: 6px; }
+    #ficha .buscar input { flex: 1; min-width: 0; }
+    #ficha .resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    #ficha .cifra { border: 1px solid #2b463c; border-radius: 4px; padding: 8px; text-align: center; background: #0f1a17; }
+    #ficha .cifra b { display: block; font-size: 18px; color: #e6efe9; }
+    #ficha .cifra span { font-size: 10px; color: #9bb3a8; }
+    #ficha .crm {
+      display: block; text-align: center; background: #2d544c; color: #fff; text-decoration: none; font-size: 13px; padding: 9px; border-radius: 4px; border: 1px solid #4caf50;
+    }
+    #ficha .crm:hover { background: #37665c; }
+    #ficha .aviso { font-size: 11px; color: #6f8a7f; line-height: 1.4; }
+    #ficha h3 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #9bb3a8; }
+    #ficha ol { list-style: none; display: grid; gap: 6px; font-size: 13px; }
+    #ficha ol li { display: grid; grid-template-columns: 74px 1fr; gap: 8px; }
+    #ficha ol li.dijo span { color: #4caf50; }
+    #ficha ol li.vacio { display: block; color: #9bb3a8; }
+    #ficha time { color: #9bb3a8; font-size: 12px; }
   </style>
 </head>
 <body>
   <h1>Oficina IA · Alimin</h1>
-  <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre atienden; Ali - Competencia, Ali - Anuncios y Ali - Mercado investigan la web cada mañana. En su escritorio, con globo de diálogo, es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador. Cuando no hay trabajo repasan temas de Alimin en la zona de café (sin gastar tokens) y de noche duermen.</p>
+  <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre atienden desde su oficina; cuando no hay trabajo esperan en la cafetería repasando temas de Alimin (sin gastar tokens). Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y el resto del día repasan. Un globo de diálogo es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador. De noche duermen en su puesto.</p>
   <div id="miniverse-container"></div>
   <div class="status-bar" id="status-bar"></div>
   <section class="registro">
@@ -75,10 +103,36 @@
     <ol id="registro"></ol>
   </section>
   <p class="nota">Sin datos de clientes: solo se muestra el canal y la acción. Oficina basada en Miniverse (MIT).</p>
-  <div id="tooltip">
-    <div class="name"></div>
-    <div class="state"></div>
-    <div class="task"></div>
+  <div id="ficha" role="dialog" aria-modal="true" aria-labelledby="ficha-nombre">
+    <div class="fondo" data-cerrar></div>
+    <aside class="panel">
+      <div class="cabeza">
+        <div>
+          <h2 id="ficha-nombre"></h2>
+          <p class="rol"></p>
+        </div>
+        <button class="cerrar" data-cerrar aria-label="Cerrar">✕</button>
+      </div>
+      <p class="ahora"></p>
+      <div class="periodos">
+        <button class="periodo activo" data-periodo="hoy">Hoy</button>
+        <button class="periodo" data-periodo="ayer">Ayer</button>
+        <button class="periodo" data-periodo="semana">Últimos 7 días</button>
+        <button class="periodo" data-periodo="fechas">Elegir fechas</button>
+      </div>
+      <div class="fechas">
+        <input type="date" name="desde" aria-label="Desde"> a <input type="date" name="hasta" aria-label="Hasta">
+      </div>
+      <form class="buscar">
+        <input type="search" name="q" placeholder="Buscar en sus tareas">
+        <button type="submit">Buscar</button>
+      </form>
+      <div class="resumen"></div>
+      <a class="crm" target="_blank" rel="noopener">Ver conversaciones en el CRM</a>
+      <p class="aviso">Aquí solo se ven las tareas, sin datos de clientes. Las conversaciones completas están en el CRM, con su clave.</p>
+      <h3>Lo que hizo</h3>
+      <ol class="tareas"></ol>
+    </aside>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
