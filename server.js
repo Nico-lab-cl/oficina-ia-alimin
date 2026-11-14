@@ -115,6 +115,12 @@ server.handleHttp = async (req, res) => {
       res.end('Solo los agentes de Alimin pueden escribir aquí.');
       return;
     }
+    // Trabajo real: la rutina de estudio no lo pisa mientras dure.
+    const agente = await agenteDelAviso(req);
+    if (agente) {
+      ultimoReal.set(agente, Date.now());
+      estudiando.delete(agente);
+    }
     return original(req, res);
   }
 
@@ -158,25 +164,100 @@ server.httpServer.prependListener('upgrade', (req, socket) => {
 });
 
 /**
- * Los tres agentes siempre están en la oficina. Si nunca avisaron o
- * Miniverse los dio por desconectados, vuelven a aparecer dormidos.
+ * El cuerpo del aviso se lee una sola vez: se guarda y se le devuelve al
+ * servidor de Miniverse igual que llegó.
  */
-function presentes() {
+async function agenteDelAviso(req) {
+  const partes = [];
+  for await (const p of req) partes.push(p);
+  const cuerpo = Buffer.concat(partes);
+  const { Readable } = await import('node:stream');
+  const copia = Readable.from([cuerpo]);
+  req[Symbol.asyncIterator] = copia[Symbol.asyncIterator].bind(copia);
+  req.on = copia.on.bind(copia);
+  req.once = copia.once.bind(copia);
+  try {
+    return JSON.parse(cuerpo.toString('utf8')).agent || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Rutina sin IA (no gasta tokens, Nicolás 14-11-2026): cuando un agente no
+ * tiene trabajo real, repasa temas de Alimin (va a la zona de café con
+ * burbujas de pensamiento) y descansa entre repasos. De noche duerme. Es
+ * solo una animación: el trabajo real se ve en su escritorio y queda en el
+ * registro; esto no.
+ */
+const TEMAS = {
+  ali: [
+    'precios de Lomas del Mar', 'precios de Arena y Sol', 'entrega por etapas', 'qué incluyen los terrenos',
+    'crédito directo sin banco', 'cómo se agenda una visita', 'objeción: ¿es estafa?', 'rol propio y escritura',
+    'distancia a la playa', 'Libertad y Alegría',
+  ],
+  calificador: [
+    'señales de compra en los chats', 'qué hace calificado a un lead', 'objeciones más repetidas', 'pie y forma de pago',
+    'plazos de compra', 'lead score: los 28 puntos', 'conversaciones de Instagram', 'conversaciones del chat web',
+  ],
+  cierre: [
+    'objeción: lo veo con mi pareja', 'segunda visita en pareja', 'promesa ante notario', 'cuotas el día 5',
+    'escritura con la recepción final', 'cuándo se puede construir', 'correos post-visita', 'objeción: lo voy a pensar',
+  ],
+};
+const ultimoReal = new Map();
+const estudiando = new Map();
+const pausa = new Map();
+const TRABAJO_REAL_MS = 90 * 1000;
+const azar = (min, max) => min + Math.random() * (max - min);
+
+function esNoche() {
+  const hora = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago', hour: '2-digit', hour12: false }));
+  return hora >= 23 || hora < 8;
+}
+
+function rutina() {
   const ahora = Date.now();
   const estado = new Map(server.store.getAll().map(a => [a.agent, a]));
+  const noche = esNoche();
   for (const a of AGENTES) {
     const actual = estado.get(a.agent);
     if (!actual) {
-      server.store.heartbeat({ ...a, state: 'idle', task: null });
-    } else if (actual.state === 'offline' || (actual.state === 'sleeping' && ahora - actual.lastSeen > DORMIR_MS)) {
-      server.store.heartbeat({ agent: a.agent, name: a.name, state: 'sleeping', task: null });
+      server.store.heartbeat({ ...a, state: noche ? 'sleeping' : 'idle', task: null });
+      continue;
     }
+    if (ahora - (ultimoReal.get(a.agent) ?? 0) < TRABAJO_REAL_MS) continue;
+
+    if (noche) {
+      estudiando.delete(a.agent);
+      if (actual.state !== 'sleeping' || ahora - actual.lastSeen > DORMIR_MS) {
+        server.store.heartbeat({ agent: a.agent, name: a.name, state: 'sleeping', task: null });
+      }
+      continue;
+    }
+
+    const hasta = estudiando.get(a.agent);
+    if (hasta && ahora < hasta) continue;
+    if (hasta) {
+      estudiando.delete(a.agent);
+      pausa.set(a.agent, ahora + azar(20, 70) * 1000);
+      server.store.heartbeat({ agent: a.agent, name: a.name, state: 'idle', task: null });
+      continue;
+    }
+    if ((pausa.get(a.agent) ?? 0) > ahora) {
+      if (ahora - actual.lastSeen > DORMIR_MS / 2) server.store.heartbeat({ agent: a.agent, name: a.name, state: 'idle', task: null });
+      continue;
+    }
+    const temas = TEMAS[a.agent];
+    const tema = temas[Math.floor(Math.random() * temas.length)];
+    server.store.heartbeat({ agent: a.agent, name: a.name, state: 'thinking', task: `Estudiando: ${tema}` });
+    estudiando.set(a.agent, ahora + azar(30, 60) * 1000);
   }
 }
 
 server.start().then(port => {
-  presentes();
-  setInterval(presentes, 30 * 1000).unref?.();
+  rutina();
+  setInterval(rutina, 5000).unref?.();
   console.log(`[oficina] Oficina IA Alimin en el puerto ${port}.`);
 }).catch(error => {
   console.error('[oficina] No se pudo iniciar:', error);

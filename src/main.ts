@@ -1,7 +1,7 @@
 import { Miniverse, PropSystem } from '@miniverse/core';
 import type { SceneConfig, SpriteSheetConfig } from '@miniverse/core';
 
-const WORLD_ID = 'cozy-startup';
+const WORLD_ID = 'posh-highrise';
 const basePath = `/worlds/${WORLD_ID}`;
 
 function charSprites(name: string): SpriteSheetConfig {
@@ -206,10 +206,10 @@ async function main() {
 
 const ESTADO: Record<string, string> = {
   working: 'trabajando',
-  thinking: 'pensando',
+  thinking: 'repasando',
   speaking: 'hablando',
-  idle: 'disponible',
-  sleeping: 'durmiendo (sin trabajo)',
+  idle: 'en pausa',
+  sleeping: 'durmiendo (de noche)',
   error: 'con un problema',
   offline: 'fuera de la oficina',
 };
