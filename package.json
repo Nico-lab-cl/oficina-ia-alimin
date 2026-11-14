@@ -1,0 +1,19 @@
+{
+  "name": "oficina-ia-alimin",
+  "private": true,
+  "type": "module",
+  "description": "Oficina en pixel art donde se ven trabajar en vivo los agentes de IA de Alimin (Ali, Calificador y Cierre). Basada en Miniverse (MIT).",
+  "scripts": {
+    "build": "vite build",
+    "start": "node server.js",
+    "dev": "vite build && node server.js"
+  },
+  "dependencies": {
+    "@miniverse/core": "0.2.6",
+    "@miniverse/server": "0.2.8"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "vite": "5.4.11"
+  }
+}

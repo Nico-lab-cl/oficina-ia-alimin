@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oficina IA Alimin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f1a17;
+      color: #e6efe9;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      gap: 14px;
+      padding: 24px 16px 40px;
+    }
+    h1 { font-size: 18px; color: #4caf50; letter-spacing: 3px; text-transform: uppercase; }
+    .subtitle { font-size: 12px; color: #9bb3a8; text-align: center; max-width: 640px; line-height: 1.5; }
+    #miniverse-container {
+      border: 2px solid #2b463c;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #0a1210;
+      display: inline-block;
+      line-height: 0;
+      max-width: 100%;
+    }
+    #miniverse-container canvas { max-width: 100%; height: auto; }
+    #tooltip {
+      position: fixed;
+      background: rgba(10, 18, 16, 0.92);
+      border: 1px solid #4caf50;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      display: none;
+      z-index: 100;
+      max-width: 240px;
+      line-height: 1.5;
+    }
+    #tooltip .name { color: #4caf50; font-weight: bold; }
+    #tooltip .state { color: #c9d6cf; }
+    #tooltip .task { color: #8fb8ff; }
+    .status-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; font-size: 12px; color: #c9d6cf; }
+    .status-bar .agent { display: flex; align-items: center; gap: 6px; }
+    .status-bar .estado { color: #9bb3a8; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex: none; }
+    .status-dot.working { background: #4ade80; }
+    .status-dot.idle { background: #fbbf24; }
+    .status-dot.sleeping { background: #818cf8; }
+    .status-dot.thinking { background: #f472b6; }
+    .status-dot.error { background: #ef4444; }
+    .status-dot.speaking { background: #22d3ee; }
+    .registro { width: min(720px, 100%); border: 1px solid #2b463c; border-radius: 4px; padding: 12px 14px; background: #16241f; }
+    .registro h2 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #9bb3a8; margin-bottom: 8px; }
+    #registro { list-style: none; display: grid; gap: 6px; font-size: 13px; }
+    #registro li { display: grid; grid-template-columns: 48px 96px 1fr; gap: 8px; }
+    #registro li.vacio { display: block; color: #9bb3a8; }
+    #registro time { color: #9bb3a8; }
+    #registro b { color: #4caf50; }
+    .nota { font-size: 11px; color: #6f8a7f; text-align: center; max-width: 640px; }
+  </style>
+</head>
+<body>
+  <h1>Oficina IA · Alimin</h1>
+  <p class="subtitle">Ali, el Calificador y Cierre en vivo. Cada movimiento es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador o un correo post-visita de Cierre. Si no hay trabajo, duermen.</p>
+  <div id="miniverse-container"></div>
+  <div class="status-bar" id="status-bar"></div>
+  <section class="registro">
+    <h2>Lo que están haciendo</h2>
+    <ol id="registro"></ol>
+  </section>
+  <p class="nota">Sin datos de clientes: solo se muestra el canal y la acción. Oficina basada en Miniverse (MIT).</p>
+  <div id="tooltip">
+    <div class="name"></div>
+    <div class="state"></div>
+    <div class="task"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
