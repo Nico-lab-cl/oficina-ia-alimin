@@ -211,12 +211,21 @@
       "layer": "below",
       "anchors": [
         {
-          "name": "standing_desk_0_0",
+          "name": "puesto_interaccion",
           "ox": 1,
           "oy": 1.5,
           "type": "work"
         }
       ]
+    },
+    {
+      "id": "a_laptop",
+      "x": 3,
+      "y": 2,
+      "w": 0.8,
+      "h": 1,
+      "layer": "below",
+      "anchors": []
     },
     {
       "id": "standing_desk",
@@ -227,12 +236,121 @@
       "layer": "below",
       "anchors": [
         {
-          "name": "standing_desk_2_0",
+          "name": "puesto_calificador",
           "ox": 1,
-          "oy": 2,
+          "oy": 1.5,
           "type": "work"
         }
       ]
+    },
+    {
+      "id": "a_laptop",
+      "x": 7,
+      "y": 2,
+      "w": 0.8,
+      "h": 1,
+      "layer": "below",
+      "anchors": []
+    },
+    {
+      "id": "standing_desk",
+      "x": 10,
+      "y": 2.25,
+      "w": 3,
+      "h": 1.5,
+      "layer": "below",
+      "anchors": [
+        {
+          "name": "puesto_cierre",
+          "ox": 1,
+          "oy": 1.5,
+          "type": "work"
+        }
+      ]
+    },
+    {
+      "id": "a_laptop",
+      "x": 11,
+      "y": 2,
+      "w": 0.8,
+      "h": 1,
+      "layer": "below",
+      "anchors": []
+    },
+    {
+      "id": "standing_desk",
+      "x": 2,
+      "y": 5.25,
+      "w": 3,
+      "h": 1.5,
+      "layer": "below",
+      "anchors": [
+        {
+          "name": "puesto_competencia",
+          "ox": 1,
+          "oy": 1.5,
+          "type": "work"
+        }
+      ]
+    },
+    {
+      "id": "a_laptop",
+      "x": 3,
+      "y": 5,
+      "w": 0.8,
+      "h": 1,
+      "layer": "below",
+      "anchors": []
+    },
+    {
+      "id": "standing_desk",
+      "x": 6,
+      "y": 5.25,
+      "w": 3,
+      "h": 1.5,
+      "layer": "below",
+      "anchors": [
+        {
+          "name": "puesto_anuncios",
+          "ox": 1,
+          "oy": 1.5,
+          "type": "work"
+        }
+      ]
+    },
+    {
+      "id": "a_laptop",
+      "x": 7,
+      "y": 5,
+      "w": 0.8,
+      "h": 1,
+      "layer": "below",
+      "anchors": []
+    },
+    {
+      "id": "standing_desk",
+      "x": 10,
+      "y": 5.25,
+      "w": 3,
+      "h": 1.5,
+      "layer": "below",
+      "anchors": [
+        {
+          "name": "puesto_mercado",
+          "ox": 1,
+          "oy": 1.5,
+          "type": "work"
+        }
+      ]
+    },
+    {
+      "id": "a_laptop",
+      "x": 11,
+      "y": 5,
+      "w": 0.8,
+      "h": 1,
+      "layer": "below",
+      "anchors": []
     },
     {
       "id": "l_sectional_sofa",
@@ -384,54 +502,6 @@
       "y": 0,
       "w": 1.3,
       "h": 2,
-      "layer": "below"
-    },
-    {
-      "id": "desk_chair_dark",
-      "x": 7,
-      "y": 2.75,
-      "w": 1,
-      "h": 1.8,
-      "layer": "above",
-      "anchors": [
-        {
-          "ox": 0.5,
-          "oy": 2,
-          "type": "work",
-          "name": "desk_chair_dark_20_0"
-        }
-      ]
-    },
-    {
-      "id": "desk_chair_dark",
-      "x": 3,
-      "y": 2.75,
-      "w": 1,
-      "h": 1.8,
-      "layer": "above",
-      "anchors": [
-        {
-          "ox": 0.5,
-          "oy": 2,
-          "type": "work",
-          "name": "desk_chair_dark_20_0"
-        }
-      ]
-    },
-    {
-      "id": "a_laptop",
-      "x": 7,
-      "y": 2,
-      "w": 0.8,
-      "h": 1,
-      "layer": "below"
-    },
-    {
-      "id": "a_laptop",
-      "x": 3,
-      "y": 2,
-      "w": 0.8,
-      "h": 1,
       "layer": "below"
     }
   ],

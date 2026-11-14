@@ -23,10 +23,15 @@ const USUARIO = process.env.OFICINA_USUARIO || 'alimin';
 const CLAVE = process.env.OFICINA_CLAVE || '';
 const SECRETO = process.env.IA_SECRET || '';
 const AGENTES = [
-  { agent: 'ali', name: 'Ali' },
-  { agent: 'calificador', name: 'Calificador' },
-  { agent: 'cierre', name: 'Cierre' },
+  { agent: 'ali', name: 'Ali - Interacción' },
+  { agent: 'calificador', name: 'Ali - Calificador' },
+  { agent: 'cierre', name: 'Ali - Cierre' },
+  // Investigadores (CRM web, lib/investigacion): leen la web pública todos los días.
+  { agent: 'competencia', name: 'Ali - Competencia' },
+  { agent: 'anuncios', name: 'Ali - Anuncios' },
+  { agent: 'mercado', name: 'Ali - Mercado' },
 ];
+const NOMBRES = Object.fromEntries(AGENTES.map(a => [a.agent, a.name]));
 /** Sin avisos este rato, el agente se duerme (Miniverse lo hace solo). */
 const DORMIR_MS = 3 * 60 * 1000;
 
@@ -87,6 +92,12 @@ function archivoDe(pathname) {
 
 const server = new MiniverseServer({ port: PORT, publicDir: DIST, offlineTimeout: DORMIR_MS });
 const original = server.handleHttp.bind(server);
+
+// Los nombres los pone la oficina (Nicolás, 14-11-2026): aunque un servicio
+// mande otro "name", se ven como "Ali - Interacción", "Ali - Calificador" y
+// "Ali - Cierre".
+const latido = server.store.heartbeat.bind(server.store);
+server.store.heartbeat = data => latido({ ...data, name: NOMBRES[data.agent] ?? data.name });
 
 const LECTURA = new Set(['/api/info', '/api/agents', '/api/events', '/api/channels']);
 const ESCRITURA = new Set(['/api/heartbeat', '/api/act']);
@@ -203,6 +214,18 @@ const TEMAS = {
   cierre: [
     'objeción: lo veo con mi pareja', 'segunda visita en pareja', 'promesa ante notario', 'cuotas el día 5',
     'escritura con la recepción final', 'cuándo se puede construir', 'correos post-visita', 'objeción: lo voy a pensar',
+  ],
+  competencia: [
+    'precios por m² en El Tabo', 'avisos de Algarrobo y El Quisco', 'terrenos en Cartagena y San Antonio',
+    'quién ofrece crédito directo', 'terrenos con vista al mar', 'avisos que bajaron de precio',
+  ],
+  anuncios: [
+    'anuncios de la competencia en Meta', 'ángulos que repite la competencia', 'ofertas y promociones',
+    'anuncios que llevan meses corriendo', 'videos vs. imágenes',
+  ],
+  mercado: [
+    'noticias del litoral central', 'tasas hipotecarias', 'valor de la UF', 'normas de terrenos y permisos',
+    'estafas con terrenos', 'obras y rutas en El Tabo',
   ],
 };
 const ultimoReal = new Map();

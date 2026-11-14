@@ -71,8 +71,11 @@ async function main() {
   // Los agentes de Alimin, siempre en el mismo orden y con el mismo personaje
   // (el servidor los mantiene presentes; ver server.js).
   const availableSprites: string[] = await fetch('/api/citizens').then(r => r.json()).catch(() => ['dexter', 'morty', 'nova', 'rio']);
-  const ORDEN = ['ali', 'calificador', 'cierre'];
-  const SPRITE: Record<string, string> = { ali: 'nova', calificador: 'dexter', cierre: 'rio' };
+  const SPRITE: Record<string, string> = {
+    ali: 'nova', calificador: 'dexter', cierre: 'rio',
+    // morty2 y dexter2 son morty y dexter con otra ropa (scripts/tenir.mjs).
+    competencia: 'morty', anuncios: 'dexter2', mercado: 'morty2',
+  };
   const serverAgents: { agent: string; name: string }[] = await fetch('/api/agents')
     .then(r => r.json())
     .then((d: any) => (d.agents ?? []) as { agent: string; name: string }[])
@@ -204,6 +207,8 @@ async function main() {
   setInterval(pintarEventos, 3000);
 }
 
+const ORDEN = ['ali', 'calificador', 'cierre', 'competencia', 'anuncios', 'mercado'];
+
 const ESTADO: Record<string, string> = {
   working: 'trabajando',
   thinking: 'repasando',
@@ -213,11 +218,21 @@ const ESTADO: Record<string, string> = {
   error: 'con un problema',
   offline: 'fuera de la oficina',
 };
-const NOMBRE: Record<string, string> = { ali: 'Ali', calificador: 'Calificador', cierre: 'Cierre' };
+const NOMBRE: Record<string, string> = {
+  ali: 'Ali - Interacción',
+  calificador: 'Ali - Calificador',
+  cierre: 'Ali - Cierre',
+  competencia: 'Ali - Competencia',
+  anuncios: 'Ali - Anuncios',
+  mercado: 'Ali - Mercado',
+};
 const ROL: Record<string, string> = {
-  Ali: 'Atiende el chat web, Instagram y Facebook',
-  Calificador: 'Lee las conversaciones y suma al lead score',
-  Cierre: 'Acompaña a quien ya llegó a la visita',
+  'Ali - Interacción': 'Atiende el chat web, Instagram y Facebook',
+  'Ali - Calificador': 'Lee las conversaciones y suma al lead score',
+  'Ali - Cierre': 'Acompaña a quien ya llegó a la visita',
+  'Ali - Competencia': 'Revisa los avisos de terrenos de la competencia',
+  'Ali - Anuncios': 'Revisa los anuncios de la competencia en Meta',
+  'Ali - Mercado': 'Lee las noticias del sector',
 };
 
 main().catch(console.error);
