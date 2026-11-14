@@ -14,11 +14,17 @@
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      gap: 14px;
-      padding: 24px 16px 40px;
+      gap: 10px;
+      padding: 12px 16px 40px;
     }
+    .cabecera { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 4px 18px; width: 100%; }
     h1 { font-size: 18px; color: #4caf50; letter-spacing: 3px; text-transform: uppercase; }
-    .subtitle { font-size: 12px; color: #9bb3a8; text-align: center; max-width: 640px; line-height: 1.5; }
+    .pista { font-size: 12px; color: #9bb3a8; }
+    .pista .movil { display: none; }
+    details.ayuda { font-size: 12px; color: #9bb3a8; }
+    details.ayuda summary { cursor: pointer; color: #c9d6cf; }
+    .subtitle { font-size: 12px; color: #9bb3a8; text-align: center; max-width: 640px; line-height: 1.5; margin-top: 6px; }
+    /* La oficina entera a la vista: tan ancha como cabe sin pasarse del alto de la pantalla. */
     #miniverse-container {
       border: 2px solid #2b463c;
       border-radius: 4px;
@@ -28,8 +34,13 @@
       line-height: 0;
       max-width: 100%;
     }
-    /* Miniverse fija alto y ancho en línea: sin esto se achata al angostar la pantalla. */
-    #miniverse-container canvas { max-width: 100%; height: auto !important; }
+    /* Miniverse fija alto y ancho en línea: se pisan para que no se achate. */
+    #miniverse-container canvas {
+      display: block;
+      width: min(calc(100vw - 36px), calc((100vh - 130px) * var(--aspecto, 2))) !important;
+      min-width: min(calc(100vw - 36px), 640px);
+      height: auto !important;
+    }
     .status-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; font-size: 12px; color: #c9d6cf; }
     .status-bar .agent { display: flex; align-items: center; gap: 6px; }
     .status-bar .estado { color: #9bb3a8; }
@@ -91,11 +102,42 @@
     #ficha ol li.dijo span { color: #4caf50; }
     #ficha ol li.vacio { display: block; color: #9bb3a8; }
     #ficha time { color: #9bb3a8; font-size: 12px; }
+
+    /* Celular: la oficina se ve grande y se desliza de lado; la barra pasa a tarjetas. */
+    @media (max-width: 700px) {
+      body { padding: 10px 10px 32px; gap: 10px; }
+      h1 { font-size: 15px; letter-spacing: 2px; }
+      .pista .escritorio { display: none; }
+      .pista .movil { display: inline; }
+      #miniverse-container { display: block; width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+      #miniverse-container canvas {
+        width: calc(min(52vh, 360px) * var(--aspecto, 2)) !important;
+        min-width: 0;
+        max-width: none;
+      }
+      .status-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; font-size: 11px; }
+      .status-bar .agent {
+        display: grid; grid-template-columns: 8px 1fr; column-gap: 6px; align-items: center;
+        border: 1px solid #2b463c; border-radius: 4px; padding: 7px 8px; background: #16241f; min-width: 0;
+      }
+      .status-bar .agent .estado { grid-column: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .registro { padding: 10px; }
+      #registro li { grid-template-columns: 40px 1fr; }
+      #registro li span { grid-column: 2; }
+      #ficha .panel { padding: 14px 12px; }
+      #ficha .resumen .cifra b { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
-  <h1>Oficina IA · Alimin</h1>
-  <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre atienden desde su oficina; cuando no hay trabajo esperan en la cafetería repasando temas de Alimin (sin gastar tokens). Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y el resto del día repasan. Un globo de diálogo es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador. De noche duermen en su puesto.</p>
+  <header class="cabecera">
+    <h1>Oficina IA · Alimin</h1>
+    <span class="pista"><span class="escritorio">Haz clic en un agente para ver lo que hizo</span><span class="movil">Desliza para ver toda la oficina · toca un agente</span></span>
+    <details class="ayuda">
+      <summary>Cómo funciona</summary>
+      <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre atienden desde su oficina; cuando no hay trabajo esperan en la cafetería repasando temas de Alimin (sin gastar tokens). Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y el resto del día repasan. Un globo de diálogo es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador. De noche dormitan en la silla de su puesto.</p>
+    </details>
+  </header>
   <div id="miniverse-container"></div>
   <div class="status-bar" id="status-bar"></div>
   <section class="registro">

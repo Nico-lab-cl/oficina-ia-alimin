@@ -104,8 +104,11 @@ const EN_ESCRITORIO = new Set(['competencia', 'anuncios', 'mercado']);
 const latido = server.store.heartbeat.bind(server.store);
 server.store.heartbeat = data => {
   const d = { ...data, name: NOMBRES[data.agent] ?? data.name };
+  // Hablar es parte del trabajo: se queda sentado en su puesto y la página
+  // pone el globo (en Miniverse, 'speaking' lo dejaría de pie).
+  if (d.state === 'speaking') d.state = 'working';
   if (EN_ESCRITORIO.has(d.agent) && d.state && !['working', 'sleeping', 'offline'].includes(d.state)) {
-    if (d.state !== 'speaking') d.task = `Repasando: ${temaAlAzar(d.agent)}`;
+    d.task = `Repasando: ${temaAlAzar(d.agent)}`;
     d.state = 'working';
   }
   return latido(d);

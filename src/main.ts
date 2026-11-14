@@ -18,7 +18,8 @@ function charSprites(name: string): SpriteSheetConfig {
       walk_left: { sheet: 'walk', row: 2, frames: 4, speed: 0.15 },
       walk_right: { sheet: 'walk', row: 3, frames: 4, speed: 0.15 },
       working: { sheet: 'actions', row: 0, frames: 4, speed: 0.3 },
-      sleeping: { sheet: 'actions', row: 1, frames: 2, speed: 0.8 },
+      // De noche dormitan sentados en su silla (no en el piso): primer cuadro de 'working'.
+      sleeping: { sheet: 'actions', row: 0, frames: 1, speed: 1 },
       talking: { sheet: 'actions', row: 2, frames: 4, speed: 0.15 },
     },
     frameWidth: 64,
@@ -60,6 +61,8 @@ async function main() {
 
   const gridCols = sceneData?.gridCols ?? 16;
   const gridRows = sceneData?.gridRows ?? 12;
+  // Proporción del plano, para que el CSS muestre la oficina completa (index.html).
+  container.style.setProperty('--aspecto', String(gridCols / gridRows));
   const sceneConfig = buildSceneConfig(gridCols, gridRows, sceneData?.floor, sceneData?.tiles);
   const tileSize = 32;
 
@@ -134,7 +137,7 @@ async function main() {
   // Los muros de las oficinas son baldosas de concreto: nadie los atraviesa.
   const muros: string[] = [];
   (sceneData?.floor ?? []).forEach((fila: string[], y: number) => fila.forEach((t, x) => {
-    if (t === 'polished_concrete_wall') muros.push(`${x},${y}`);
+    if (t === 'polished_concrete_wall' || t === 'glass_wall') muros.push(`${x},${y}`);
   }));
   const syncProps = () => {
     mv.setTypedLocations(props.getLocations());
@@ -161,17 +164,17 @@ async function main() {
       c.goToAnchorType('utility', lugares, ruta, reservas, otros) || c.goToAnchorType('social', lugares, ruta, reservas, otros);
     }
     if ((a === 'working' || a === 'speaking') && !esRepaso(c.task)) {
-      interno.speechBubbles.show(c.x + 16, c.y - 8, c.task, a === 'speaking' ? 5 : 4, c);
+      interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, a === 'speaking' ? 5 : 4, c);
     } else if (a === 'error') {
       interno.particles.emitExclamation(c.x + 16, c.y - c.getSittingOffset());
     }
   };
-  // Los investigadores no se paran a hablar: lo que encontraron llega como
-  // tarea nueva sin cambiar de estado (server.js), y aquí sale el globo.
+  // Nadie se para a hablar: lo que dicen llega como tarea nueva sin cambiar
+  // de estado (server.js) y aquí sale el globo, con el agente sentado.
   const señal = interno.handleSignalUpdate.bind(mv);
   const ubicados = new Set<string>();
   interno.handleSignalUpdate = (lista: unknown) => {
-    const antes = new Map(mv.getCitizens().map((c: any) => [c.agentId, c.task]));
+    const antes = new Map(mv.getCitizens().map((c: any) => [c.agentId, { task: c.task, state: c.state }]));
     señal(lista);
     for (const c of mv.getCitizens() as any[]) {
       // Al abrir la página todos parten en su puesto: el que está repasando
@@ -180,8 +183,9 @@ async function main() {
         ubicados.add(c.agentId);
         if (c.state === 'thinking') interno.handleStateTransition(c, '', c.state);
       }
-      if (!EN_ESCRITORIO.has(c.agentId) || c.state !== 'working' || esRepaso(c.task)) continue;
-      if (antes.has(c.agentId) && antes.get(c.agentId) !== c.task) interno.speechBubbles.show(c.x + 16, c.y - 8, c.task, 5, c);
+      const previo = antes.get(c.agentId);
+      if (!previo || previo.state !== 'working' || c.state !== 'working' || esRepaso(c.task)) continue;
+      if (previo.task !== c.task) interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, 5, c);
     }
   };
 
@@ -251,8 +255,9 @@ async function main() {
       while (registro.children.length > 12) registro.lastChild!.remove();
     }
     if (typeof d.lastEventId === 'number') ultimoEvento = d.lastEventId;
-    if (!registro.children.length) registro.innerHTML = '<li class="vacio">Todavía no hay movimiento. Cuando un agente trabaje, aparece aquí.</li>';
-    else registro.querySelector('.vacio')?.remove();
+    const vacio = registro.querySelector('.vacio');
+    if (registro.querySelector('li:not(.vacio)')) vacio?.remove();
+    else if (!vacio) registro.innerHTML = '<li class="vacio">Todavía no hay movimiento. Cuando un agente trabaje, aparece aquí.</li>';
   };
   await Promise.all([pintarEstado(), pintarEventos()]);
   setInterval(pintarEstado, 3000);
