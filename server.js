@@ -242,10 +242,13 @@ async function historial(url, res) {
       headers: { 'x-ia-secret': SECRETO },
       signal: AbortSignal.timeout(10000),
     });
+    if (r.status === 404) throw new Error('el CRM web todavía no tiene el historial (falta implementarlo en EasyPanel)');
     if (!r.ok) throw new Error(`el CRM respondió ${r.status}`);
     responder(200, { ...(await r.json()), crm: `${CRM}/agentes-ia/historial` });
   } catch (error) {
-    responder(502, { error: `No se pudo leer el historial: ${error.message}`, crm: `${CRM}/agentes-ia/historial` });
+    // Con 200: EasyPanel cambia las respuestas 5xx por su propia página y la
+    // ficha no podría mostrar el motivo.
+    responder(200, { error: `No se pudo leer el historial: ${error.message}.`, crm: `${CRM}/agentes-ia/historial` });
   }
 }
 
