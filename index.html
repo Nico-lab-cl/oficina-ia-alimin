@@ -51,6 +51,19 @@
     .status-dot.thinking { background: #f472b6; }
     .status-dot.error { background: #ef4444; }
     .status-dot.speaking { background: #22d3ee; }
+    .status-dot.puesto { background: #2dd4bf; }
+    .status-dot.gato { background: #fb923c; }
+    .status-dot.espera { background: #6b7280; }
+    /* Botón y aviso del modo "Actividad real". */
+    #modo-real {
+      background: #0f1a17; border: 1px solid #2b463c; color: #c9d6cf; font: inherit; font-size: 12px;
+      padding: 5px 10px; border-radius: 3px; cursor: pointer;
+    }
+    #modo-real:hover { border-color: #4caf50; }
+    #modo-real[aria-pressed="true"] { background: #166534; border-color: #4ade80; color: #fff; }
+    .aviso-real { display: none; font-size: 12px; color: #bbf7d0; background: #10291d; border: 1px solid #166534; border-radius: 4px; padding: 6px 10px; max-width: 760px; text-align: center; line-height: 1.4; }
+    body.modo-real .aviso-real { display: block; }
+    body.modo-real #miniverse-container { border-color: #166534; }
     .registro { width: min(720px, 100%); border: 1px solid #2b463c; border-radius: 4px; padding: 12px 14px; background: #16241f; }
     .registro h2 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #9bb3a8; margin-bottom: 8px; }
     #registro { list-style: none; display: grid; gap: 6px; font-size: 13px; }
@@ -75,7 +88,16 @@
     #ficha .cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
     #ficha h2 { font-size: 16px; color: #4caf50; }
     #ficha .rol { font-size: 12px; color: #9bb3a8; margin-top: 4px; line-height: 1.4; }
-    #ficha .ahora { font-size: 12px; color: #c9d6cf; }
+    #ficha .en-vivo { border: 1px solid #2b463c; border-radius: 4px; padding: 9px 10px; background: #0f1a17; display: grid; gap: 6px; }
+    #ficha .ahora-real { font-size: 13px; color: #e6efe9; line-height: 1.4; }
+    #ficha .ahora-real.trabajando { color: #4ade80; }
+    #ficha .ahora-vista { font-size: 11px; color: #9bb3a8; }
+    #ficha .vivo-pie { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #9bb3a8; }
+    #ficha .vivo { display: inline-flex; align-items: center; gap: 5px; color: #4ade80; }
+    #ficha .vivo i { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; animation: latir 1.6s infinite; }
+    @keyframes latir { 50% { opacity: 0.25; } }
+    #ficha .actualizado { flex: 1; }
+    #ficha .actualizar { background: #2d544c; border: 1px solid #4caf50; color: #fff; font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 3px; cursor: pointer; }
     #ficha .cerrar { background: none; border: 1px solid #2b463c; color: #c9d6cf; font: inherit; padding: 2px 8px; cursor: pointer; border-radius: 3px; }
     #ficha .periodos { display: flex; flex-wrap: wrap; gap: 6px; }
     #ficha button.periodo, #ficha .buscar button {
@@ -133,11 +155,13 @@
   <header class="cabecera">
     <h1>Oficina IA · Alimin</h1>
     <span class="pista"><span class="escritorio">Haz clic en un agente para ver lo que hizo</span><span class="movil">Desliza para ver toda la oficina · toca un agente</span></span>
+    <button id="modo-real" type="button" aria-pressed="false">Ver actividad real</button>
     <details class="ayuda">
       <summary>Cómo funciona</summary>
-      <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre atienden desde su oficina; cuando no hay trabajo esperan en la cafetería repasando temas de Alimin (sin gastar tokens). Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y el resto del día repasan. Un globo de diálogo es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador. De noche dormitan en la silla de su puesto.</p>
+      <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre están siempre encendidos y atentos en su oficina, de día y de noche; de vez en cuando se paran por un café o a acariciar a Michi, el gato. Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y de noche dormitan en su silla. Un globo de diálogo es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador. El botón "Ver actividad real" muestra solo lo que cada IA hizo de verdad.</p>
     </details>
   </header>
+  <p class="aviso-real">Actividad real: la etiqueta sobre cada agente dice si está trabajando ahora (verde) o en espera, con el tiempo desde su última tarea. Abajo, su última tarea real.</p>
   <div id="miniverse-container"></div>
   <div class="status-bar" id="status-bar"></div>
   <section class="registro">
@@ -155,7 +179,11 @@
         </div>
         <button class="cerrar" data-cerrar aria-label="Cerrar">✕</button>
       </div>
-      <p class="ahora"></p>
+      <div class="en-vivo">
+        <p class="ahora-real"></p>
+        <p class="ahora-vista"></p>
+        <div class="vivo-pie"><span class="vivo"><i></i>En vivo</span><span class="actualizado"></span><button class="actualizar" type="button">↻ Actualizar</button></div>
+      </div>
       <div class="periodos">
         <button class="periodo activo" data-periodo="hoy">Hoy</button>
         <button class="periodo" data-periodo="ayer">Ayer</button>

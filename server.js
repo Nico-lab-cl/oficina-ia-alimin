@@ -9,8 +9,8 @@
  *   ya usan entre ellos. Solo ellos pueden escribir (heartbeat y act).
  * - Nada de datos de clientes: los avisos dicen el canal y la acción.
  *
- * Los agentes se quedan siempre en la oficina: si no trabajan, pasean; tras
- * unos minutos sin trabajo se duermen, y despiertan con el siguiente aviso.
+ * Los agentes se quedan siempre en la oficina: los que atienden esperan
+ * atentos en su puesto (ver rutina) y el trabajo real los interrumpe.
  */
 import { MiniverseServer } from '@miniverse/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -101,6 +101,8 @@ const original = server.handleHttp.bind(server);
 // día siempre quedan "trabajando" (sentados). Lo que dicen llega como tarea
 // nueva y la página le pone el globo; cuando descansan, vuelven a repasar.
 const EN_ESCRITORIO = new Set(['competencia', 'anuncios', 'mercado']);
+/** Los que atienden clientes: nunca se van de su puesto por mucho rato. */
+const ATIENDEN = new Set(['ali', 'calificador', 'cierre']);
 const latido = server.store.heartbeat.bind(server.store);
 server.store.heartbeat = data => {
   const d = { ...data, name: NOMBRES[data.agent] ?? data.name };
@@ -111,10 +113,17 @@ server.store.heartbeat = data => {
     d.task = `Repasando: ${temaAlAzar(d.agent)}`;
     d.state = 'working';
   }
+  // Terminó un trabajo real: vuelve a quedar atento en su puesto, no a pasear.
+  if (ATIENDEN.has(d.agent) && d.state === 'idle') {
+    d.state = 'working';
+    d.task = ATENTO[d.agent];
+  }
   return latido(d);
 };
 
 const LECTURA = new Set(['/api/info', '/api/agents', '/api/events', '/api/channels']);
+/** Ambiente de oficina (sin trabajo real): nunca va al historial ni a "Actividad real". */
+const AMBIENTE = /^(Repasando|Estudiando|Atento|Café|Gato):/;
 const ESCRITURA = new Set(['/api/heartbeat', '/api/act']);
 
 server.handleHttp = async (req, res) => {
@@ -146,10 +155,23 @@ server.handleHttp = async (req, res) => {
     const agente = typeof aviso?.agent === 'string' ? aviso.agent : null;
     if (agente) {
       ultimoReal.set(agente, Date.now());
-      estudiando.delete(agente);
+      plan.delete(agente);
       guardarEnHistorial(pathname, agente, aviso);
     }
     return original(req, res);
+  }
+
+  // Modo "Actividad real": qué está haciendo de verdad cada agente.
+  if (req.method === 'GET' && pathname === '/api/actividad') {
+    const ahora = Date.now();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({
+      agentes: AGENTES.map(a => {
+        const u = ultimaTarea.get(a.agent) ?? null;
+        return { agent: a.agent, trabajando: Boolean(u && ahora - u.at < TRABAJO_REAL_MS), ultima: u };
+      }),
+    }));
+    return;
   }
 
   // Ficha de un agente: lo que hizo en las fechas pedidas (sin datos de clientes).
@@ -203,10 +225,12 @@ server.httpServer.prependListener('upgrade', (req, socket) => {
  * CRM, con su clave: aquí llegan conteos.
  */
 const CRM = (process.env.CRM_WEB_URL || 'https://marketing.aliminspa.cl').replace(/\/+$/, '');
-const esRepasoTexto = t => !t || /^(Repasando|Estudiando):/.test(t);
+const esRepasoTexto = t => !t || AMBIENTE.test(t);
+/** Último trabajo real de cada agente (para "Actividad real" y la ficha). */
+const ultimaTarea = new Map();
 
 function guardarEnHistorial(ruta, agente, aviso) {
-  if (!SECRETO || !NOMBRES[agente]) return;
+  if (!NOMBRES[agente]) return;
   let tipo = null;
   let texto = null;
   if (ruta === '/api/act' && aviso.action?.type === 'speak' && typeof aviso.action.message === 'string') {
@@ -217,6 +241,8 @@ function guardarEnHistorial(ruta, agente, aviso) {
     texto = aviso.task;
   }
   if (!tipo) return;
+  ultimaTarea.set(agente, { texto: texto.slice(0, 120), tipo, at: Date.now() });
+  if (!SECRETO) return;
   fetch(`${CRM}/api/webhooks/ia/oficina`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-ia-secret': SECRETO },
@@ -250,6 +276,27 @@ async function historial(url, res) {
     // ficha no podría mostrar el motivo.
     responder(200, { error: `No se pudo leer el historial: ${error.message}.`, crm: `${CRM}/agentes-ia/historial` });
   }
+}
+
+/**
+ * Al reiniciarse, la oficina recupera del CRM la última tarea de cada agente
+ * en la semana, para que "Actividad real" no parta en blanco.
+ */
+async function recuperarUltimas() {
+  if (!SECRETO) return;
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+  const desde = new Date(Date.parse(hoy) - 6 * 86400000).toISOString().slice(0, 10);
+  await Promise.all(AGENTES.map(async a => {
+    try {
+      const r = await fetch(`${CRM}/api/webhooks/ia/oficina?${new URLSearchParams({ agente: a.agent, desde, hasta: hoy })}`, {
+        headers: { 'x-ia-secret': SECRETO },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) return;
+      const t = (await r.json())?.tareas?.[0];
+      if (t && !ultimaTarea.has(a.agent)) ultimaTarea.set(a.agent, { texto: String(t.texto).slice(0, 120), tipo: t.tipo, at: Date.parse(t.created_at) });
+    } catch { /* sin CRM: queda en blanco hasta el próximo trabajo */ }
+  }));
 }
 
 /**
@@ -308,13 +355,11 @@ const TEMAS = {
   ],
 };
 const ultimoReal = new Map();
-const estudiando = new Map();
-const pausa = new Map();
 const TRABAJO_REAL_MS = 90 * 1000;
 const azar = (min, max) => min + Math.random() * (max - min);
+const unoDe = lista => lista[Math.floor(Math.random() * lista.length)];
 function temaAlAzar(agente) {
-  const temas = TEMAS[agente] ?? ['temas de Alimin'];
-  return temas[Math.floor(Math.random() * temas.length)];
+  return unoDe(TEMAS[agente] ?? ['temas de Alimin']);
 }
 
 function esNoche() {
@@ -322,54 +367,75 @@ function esNoche() {
   return hora >= 23 || hora < 8;
 }
 
+/**
+ * Oficina de verdad (Nicolás, 14-11-2026): los gerentes la miran, así que
+ * Ali - Interacción, Ali - Calificador y Ali - Cierre pasan el día en su
+ * puesto, atentos (están siempre encendidos), día y noche. De vez en cuando
+ * repasan un tema sentados, se paran por un café corto o van a acariciar a
+ * Michi, el gato. Es solo ambiente: el trabajo real llega de los servicios,
+ * interrumpe cualquier cosa y es lo único que va al historial y a
+ * "Actividad real".
+ */
+const ATENTO = {
+  ali: 'Atento: al chat web, Instagram y Facebook',
+  calificador: 'Atento: a las conversaciones nuevas',
+  cierre: 'Atento: a las visitas y sus correos',
+};
+const CAFES = ['un café rápido', 'un vaso de agua', 'estirando las piernas'];
+/** agente -> { hasta, tipo } de lo que está haciendo ahora sin trabajo real. */
+const plan = new Map();
+let conMichi = null;
+
+function siguiente(agente, noche, anterior) {
+  const r = Math.random();
+  const descanso = anterior === 'gato' || anterior === 'cafe';
+  if (!noche && !descanso && !conMichi && r < 0.12) {
+    conMichi = agente;
+    return { tipo: 'gato', state: 'speaking', task: 'Gato: acariciando a Michi', ms: azar(14, 20) * 1000 };
+  }
+  if (!noche && !descanso && r < 0.2) return { tipo: 'cafe', state: 'thinking', task: `Café: ${unoDe(CAFES)}`, ms: azar(25, 45) * 1000 };
+  if (r < 0.5) return { tipo: 'repaso', state: 'working', task: `Repasando: ${temaAlAzar(agente)}`, ms: azar(40, 90) * 1000 };
+  return { tipo: 'puesto', state: 'working', task: ATENTO[agente], ms: azar(60, 150) * 1000 };
+}
+
 function rutina() {
   const ahora = Date.now();
   const estado = new Map(server.store.getAll().map(a => [a.agent, a]));
   const noche = esNoche();
+  if (conMichi && plan.get(conMichi)?.tipo !== 'gato') conMichi = null;
   for (const a of AGENTES) {
     const actual = estado.get(a.agent);
-    if (!actual) {
-      server.store.heartbeat({ ...a, state: noche ? 'sleeping' : 'idle', task: null });
-      continue;
-    }
-    if (ahora - (ultimoReal.get(a.agent) ?? 0) < TRABAJO_REAL_MS) continue;
+    if (ahora - (ultimoReal.get(a.agent) ?? 0) < TRABAJO_REAL_MS && actual) continue;
+    const vigente = plan.get(a.agent);
 
-    if (noche) {
-      estudiando.delete(a.agent);
-      if (actual.state !== 'sleeping' || ahora - actual.lastSeen > DORMIR_MS) {
-        server.store.heartbeat({ agent: a.agent, name: a.name, state: 'sleeping', task: null });
-      }
-      continue;
-    }
-
-    const hasta = estudiando.get(a.agent);
-    if (hasta && ahora < hasta) continue;
-
-    // Investigadores: repasan sentados en su puesto, cambiando de tema.
+    // Investigadores: repasan sentados en su puesto, cambiando de tema; de noche duermen.
     if (EN_ESCRITORIO.has(a.agent)) {
-      server.store.heartbeat({ agent: a.agent, name: a.name, state: 'working', task: `Repasando: ${temaAlAzar(a.agent)}` });
-      estudiando.set(a.agent, ahora + azar(40, 90) * 1000);
+      if (noche) {
+        plan.delete(a.agent);
+        if (actual?.state !== 'sleeping' || ahora - actual.lastSeen > DORMIR_MS / 2) latido({ ...a, state: 'sleeping', task: null });
+        continue;
+      }
+      if (vigente && ahora < vigente.hasta && actual?.state === 'working') continue;
+      latido({ ...a, state: 'working', task: `Repasando: ${temaAlAzar(a.agent)}` });
+      plan.set(a.agent, { hasta: ahora + azar(40, 90) * 1000, tipo: 'repaso' });
       continue;
     }
 
-    if (hasta) {
-      estudiando.delete(a.agent);
-      pausa.set(a.agent, ahora + azar(20, 70) * 1000);
-      server.store.heartbeat({ agent: a.agent, name: a.name, state: 'idle', task: null });
+    if (vigente && ahora < vigente.hasta && actual) {
+      // Sigue en lo mismo: solo se avisa que sigue ahí (si no, Miniverse lo duerme).
+      if (ahora - actual.lastSeen > 60 * 1000) latido({ ...a, state: actual.state, task: actual.task });
       continue;
     }
-    if ((pausa.get(a.agent) ?? 0) > ahora) {
-      if (ahora - actual.lastSeen > DORMIR_MS / 2) server.store.heartbeat({ agent: a.agent, name: a.name, state: 'idle', task: null });
-      continue;
-    }
-    server.store.heartbeat({ agent: a.agent, name: a.name, state: 'thinking', task: `Estudiando: ${temaAlAzar(a.agent)}` });
-    estudiando.set(a.agent, ahora + azar(30, 60) * 1000);
+    const s = siguiente(a.agent, noche, vigente?.tipo);
+    plan.set(a.agent, { hasta: ahora + s.ms, tipo: s.tipo });
+    latido({ ...a, state: s.state, task: s.task });
   }
 }
 
 server.start().then(port => {
   rutina();
   setInterval(rutina, 5000).unref?.();
+  recuperarUltimas();
   console.log(`[oficina] Oficina IA Alimin en el puerto ${port}.`);
 }).catch(error => {
   console.error('[oficina] No se pudo iniciar:', error);

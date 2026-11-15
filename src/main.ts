@@ -1,5 +1,6 @@
 import { Miniverse, PropSystem } from '@miniverse/core';
 import type { SceneConfig, SpriteSheetConfig } from '@miniverse/core';
+import { Gato } from './gato';
 
 const WORLD_ID = 'posh-highrise';
 const basePath = `/worlds/${WORLD_ID}`;
@@ -147,24 +148,47 @@ async function main() {
   props.onSave(syncProps);
 
   // Dónde va cada uno (Nicolás, 14-11-2026):
-  // - Trabajando, hablando o durmiendo: en su puesto. Los investigadores
+  // - Trabajando, atento o durmiendo: en su puesto. Los investigadores
   //   siempre están ahí, sentados frente al notebook; Ali - Interacción,
   //   Ali - Calificador y Ali - Cierre en su oficina privada.
-  // - Repasando o en pausa: en la cafetería (ahí están todos los puntos de
-  //   paseo y de café del plano).
-  // El globo de diálogo es solo para trabajo real, no para los repasos.
+  // - Café: en la cafetería, un rato corto.
+  // - Gato: va a acariciar a Michi (server.js lo manda como 'speaking' para
+  //   que quede de pie y gesticulando).
+  // El globo de diálogo es solo para trabajo real, no para el ambiente.
   const interno = mv as any;
-  const esRepaso = (t: string | null) => !t || /^(Repasando|Estudiando):/.test(t);
+  const lugares = () => interno.typedLocations;
+  const ruta = () => interno.scene.pathfinder;
+  const acariciando = new Map<string, { llego: boolean }>();
+  let gato: Gato | null = null;
+
+  const irAlGato = (c: any) => {
+    if (!gato) return;
+    gato.esperar(25);
+    const g = gato.baldosa();
+    const desde = c.getTilePosition();
+    let mejor: { x: number; y: number }[] = [];
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, 1], [0, -1]]) {
+      const p = ruta().findPath(desde.x, desde.y, g.x + dx, g.y + dy);
+      if (p.length > 1 && (!mejor.length || p.length < mejor.length)) mejor = p;
+    }
+    if (!mejor.length) return;
+    interno.reservation.release(c.agentId);
+    c.walkTo(mejor);
+    acariciando.set(c.agentId, { llego: false });
+  };
+
   interno.handleStateTransition = (c: any, _de: string, a: string) => {
-    const lugares = interno.typedLocations, ruta = interno.scene.pathfinder, reservas = interno.reservation;
-    if (a === 'working' || a === 'speaking' || a === 'sleeping') {
-      c.goToAnchor(c.getHomePosition(), lugares, ruta, reservas);
+    const reservas = interno.reservation;
+    if (a === 'working' || a === 'sleeping') {
+      c.goToAnchor(c.getHomePosition(), lugares(), ruta(), reservas);
     } else if (a === 'thinking') {
       const otros = interno.getOtherHomeAnchors(c.agentId);
-      c.goToAnchorType('utility', lugares, ruta, reservas, otros) || c.goToAnchorType('social', lugares, ruta, reservas, otros);
+      c.goToAnchorType('utility', lugares(), ruta(), reservas, otros) || c.goToAnchorType('social', lugares(), ruta(), reservas, otros);
+    } else if (a === 'speaking' && /^Gato:/.test(c.task ?? '')) {
+      irAlGato(c);
     }
-    if ((a === 'working' || a === 'speaking') && !esRepaso(c.task)) {
-      interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, a === 'speaking' ? 5 : 4, c);
+    if (a === 'working' && !esAmbiente(c.task)) {
+      interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, 4, c);
     } else if (a === 'error') {
       interno.particles.emitExclamation(c.x + 16, c.y - c.getSittingOffset());
     }
@@ -177,14 +201,14 @@ async function main() {
     const antes = new Map(mv.getCitizens().map((c: any) => [c.agentId, { task: c.task, state: c.state }]));
     señal(lista);
     for (const c of mv.getCitizens() as any[]) {
-      // Al abrir la página todos parten en su puesto: el que está repasando
-      // camina a la cafetería sin esperar a cambiar de estado.
+      // Al abrir la página todos parten en su puesto: el que está en el café
+      // o con el gato camina hacia allá sin esperar a cambiar de estado.
       if (!ubicados.has(c.agentId)) {
         ubicados.add(c.agentId);
-        if (c.state === 'thinking') interno.handleStateTransition(c, '', c.state);
+        if (c.state === 'thinking' || c.state === 'speaking') interno.handleStateTransition(c, '', c.state);
       }
       const previo = antes.get(c.agentId);
-      if (!previo || previo.state !== 'working' || c.state !== 'working' || esRepaso(c.task)) continue;
+      if (!previo || previo.state !== 'working' || c.state !== 'working' || esAmbiente(c.task)) continue;
       if (previo.task !== c.task) interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, 5, c);
     }
   };
@@ -193,6 +217,53 @@ async function main() {
 
   mv.addLayer({ order: 5, render: (ctx) => props.renderBelow(ctx) });
   mv.addLayer({ order: 15, render: (ctx) => props.renderAbove(ctx) });
+
+  // --- Michi, el gato de la oficina ---
+  // Pasea por el pasillo y la cafetería, duerme siestas y recibe mimos.
+  const PASEOS = [
+    { x: 5, y: 8 }, { x: 11, y: 7 }, { x: 17, y: 8 }, { x: 18, y: 10 }, { x: 19, y: 9 },
+    { x: 22, y: 4 }, { x: 20, y: 4 }, { x: 24, y: 11 }, { x: 6, y: 11 }, { x: 12, y: 11 }, { x: 4, y: 7 },
+  ];
+  gato = new Gato(tileSize, { x: 19, y: 9 }, () => PASEOS, ruta);
+  let reloj = 0;
+  mv.addLayer({
+    order: 13,
+    render: (ctx, dt: number) => {
+      reloj += dt;
+      // Quien va a acariciarlo: al llegar, Michi recibe los mimos.
+      for (const [id, info] of acariciando) {
+        const c = (mv.getCitizens() as any[]).find(x => x.agentId === id);
+        if (!c || c.state !== 'speaking') { acariciando.delete(id); continue; }
+        if (!info.llego && !c.isMoving()) { info.llego = true; gato!.recibirMimos(c.x, 16); }
+      }
+      gato!.update(dt);
+      gato!.render(ctx, reloj);
+    },
+  });
+
+  // --- Modo "Actividad real": etiqueta sobre cada agente con su estado de verdad ---
+  mv.addLayer({
+    order: 31,
+    render: (ctx) => {
+      if (!modoReal) return;
+      for (const c of mv.getCitizens() as any[]) {
+        if (!c.visible) continue;
+        const a = actividad.get(c.agentId);
+        const trabajando = Boolean(a?.trabajando);
+        const texto = trabajando ? '● TRABAJANDO' : a?.ultima ? `en espera · ${haceCorto(a.ultima.at)}` : 'en espera';
+        ctx.save();
+        ctx.font = 'bold 7px monospace';
+        const w = ctx.measureText(texto).width;
+        const x = c.x + (tileSize - w) / 2;
+        const y = c.y - c.frameHeight + tileSize - 17 - c.getSittingOffset();
+        ctx.fillStyle = trabajando ? 'rgba(22,101,52,0.92)' : 'rgba(40,40,40,0.85)';
+        ctx.fillRect(x - 3, y - 7, w + 6, 10);
+        ctx.fillStyle = trabajando ? '#bbf7d0' : '#d4d4d4';
+        ctx.fillText(texto, x, y);
+        ctx.restore();
+      }
+    },
+  });
 
   // Sin editor: en EasyPanel la oficina solo se mira.
 
@@ -223,23 +294,40 @@ async function main() {
   const registro = document.getElementById('registro')!;
   let ultimoEvento = 0;
   const pintarEstado = async () => {
-    const agentes: { agent: string; name: string; state: string; task: string | null }[] = await fetch('/api/agents')
-      .then(r => r.json()).then((d: any) => d.agents ?? []).catch(() => []);
+    const [agentes, real] = await Promise.all([
+      fetch('/api/agents').then(r => r.json()).then((d: any) => (d.agents ?? []) as Vista[]).catch(() => [] as Vista[]),
+      fetch('/api/actividad').then(r => r.json()).then((d: any) => (d.agentes ?? []) as Actividad[]).catch(() => null),
+    ]);
+    if (real) {
+      for (const a of real) {
+        const antes = actividad.get(a.agent);
+        actividad.set(a.agent, a);
+        // La ficha abierta se actualiza sola cuando su agente hace algo nuevo.
+        if (a.agent === fichaAgente && a.ultima && antes?.ultima?.at !== a.ultima.at) refrescarFicha();
+      }
+    }
+    vista.clear();
+    for (const a of agentes) vista.set(a.agent, a);
+    pintarAhoraFicha();
+
     statusBar.innerHTML = '';
     for (const id of ORDEN) {
-      const a = agentes.find(x => x.agent === id);
+      const a = vista.get(id);
       if (!a) continue;
       const el = document.createElement('div');
       el.className = 'agent';
       el.title = 'Ver lo que hizo';
       el.dataset.agente = id;
       el.innerHTML = '<span class="status-dot"></span><b></b><span class="estado"></span>';
-      el.querySelector('.status-dot')!.classList.add(a.state);
+      const r = actividad.get(id);
+      const punto = modoReal ? (r?.trabajando ? 'working' : 'espera') : claseVista(a.state, a.task);
+      el.querySelector('.status-dot')!.classList.add(punto);
       el.querySelector('b')!.textContent = a.name;
-      el.querySelector('.estado')!.textContent = `${ESTADO[a.state] ?? a.state}${a.task ? ` · ${a.task}` : ''}`;
+      el.querySelector('.estado')!.textContent = modoReal ? textoReal(r) : textoVista(a.state, a.task);
       statusBar.appendChild(el);
     }
   };
+  pintarAhora = pintarEstado;
   const pintarEventos = async () => {
     const d: any = await fetch(`/api/events${ultimoEvento ? `?since=${ultimoEvento}` : ''}`).then(r => r.json()).catch(() => null);
     if (!d) return;
@@ -303,6 +391,72 @@ const ROL: Record<string, string> = {
   'Ali - Mercado': 'Lee las noticias del sector',
 };
 
+// --- Lo que se ve en la oficina y lo que pasa de verdad ---
+// La oficina siempre se ve como una oficina (Nicolás, 14-11-2026): los que
+// atienden están atentos en su puesto, a veces toman café o acarician a
+// Michi. "Actividad real" muestra solo lo que las IA hicieron de verdad
+// (/api/actividad, desde los avisos de los servicios).
+interface Vista { agent: string; name: string; state: string; task: string | null }
+interface Actividad { agent: string; trabajando: boolean; ultima: { texto: string; tipo: string; at: number } | null }
+const vista = new Map<string, Vista>();
+const actividad = new Map<string, Actividad>();
+let pintarAhora: () => void = () => {};
+const esAmbiente = (t: string | null) => !t || /^(Repasando|Estudiando|Atento|Café|Gato):/.test(t);
+
+function textoVista(state: string, task: string | null) {
+  if (state === 'sleeping') return 'durmiendo (de noche)';
+  if (!task) return ESTADO[state] ?? state;
+  let m: RegExpMatchArray | null;
+  if ((m = task.match(/^Atento: (.*)/))) return `en su puesto · atento ${m[1]}`;
+  if ((m = task.match(/^(?:Repasando|Estudiando): (.*)/))) return `en su puesto · repasando ${m[1]}`;
+  if ((m = task.match(/^Café: (.*)/))) return `en la cafetería · ${m[1]}`;
+  if ((m = task.match(/^Gato: (.*)/))) return m[1];
+  return `trabajando · ${task}`;
+}
+function claseVista(state: string, task: string | null) {
+  if (state === 'working') return esAmbiente(task) ? 'puesto' : 'working';
+  if (state === 'speaking') return 'gato';
+  return state;
+}
+function hace(at: number) {
+  const min = Math.floor((Date.now() - at) / 60000);
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  if (min < 24 * 60) return `hace ${Math.floor(min / 60)} h`;
+  return `el ${new Date(at).toLocaleString('es-CL', { timeZone: 'America/Santiago', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}`;
+}
+function haceCorto(at: number) {
+  const min = Math.floor((Date.now() - at) / 60000);
+  if (min < 1) return 'recién';
+  if (min < 60) return `${min} min`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)} h`;
+  return `${Math.floor(min / 1440)} d`;
+}
+function textoReal(a: Actividad | undefined) {
+  if (!a) return 'sin datos';
+  if (a.trabajando) return `trabajando ahora · ${a.ultima?.texto ?? ''}`;
+  if (a.ultima) return `en espera · última tarea ${hace(a.ultima.at)}: ${a.ultima.texto}`;
+  return 'en espera · sin tareas esta semana';
+}
+
+let modoReal = (() => {
+  if (new URLSearchParams(location.search).get('modo') === 'real') return true;
+  try { return localStorage.getItem('oficina-modo') === 'real'; } catch { return false; }
+})();
+const botonReal = document.getElementById('modo-real') as HTMLButtonElement;
+function aplicarModo() {
+  document.body.classList.toggle('modo-real', modoReal);
+  botonReal.setAttribute('aria-pressed', String(modoReal));
+  botonReal.textContent = modoReal ? '● Actividad real (activada)' : 'Ver actividad real';
+  pintarAhora();
+}
+botonReal.addEventListener('click', () => {
+  modoReal = !modoReal;
+  try { localStorage.setItem('oficina-modo', modoReal ? 'real' : 'oficina'); } catch { /* sin almacenamiento */ }
+  aplicarModo();
+});
+aplicarModo();
+
 // --- Ficha de un agente: lo que hizo hoy, ayer, en la semana o entre fechas ---
 // Las tareas vienen del CRM web vía /api/historial (sin datos de clientes); las
 // conversaciones se abren en el CRM, que pide su clave.
@@ -343,19 +497,23 @@ function cifra(valor: number, texto: string) {
   return d;
 }
 
-async function cargarFicha() {
+async function cargarFicha(silencioso = false) {
   const pedido = ++fichaPedido;
   const r = rangoFicha();
   const q = fichaQ.value.trim();
   const lista = ficha.querySelector('.tareas')!;
   const resumen = ficha.querySelector('.resumen')!;
-  lista.innerHTML = '<li class="vacio">Cargando…</li>';
-  resumen.innerHTML = '';
+  if (!silencioso) {
+    lista.innerHTML = '<li class="vacio">Cargando…</li>';
+    resumen.innerHTML = '';
+  }
 
   const params = new URLSearchParams({ agente: fichaAgente, desde: r.desde, hasta: r.hasta });
   if (q) params.set('q', q);
   const d: Historial = await fetch(`/api/historial?${params}`).then(x => x.json()).catch(() => ({ error: 'Sin conexión con la oficina' }));
   if (pedido !== fichaPedido) return;
+  ficha.querySelector('.actualizado')!.textContent = `actualizado ${new Date().toLocaleTimeString('es-CL', { timeZone: 'America/Santiago', hour12: false })}`;
+  resumen.innerHTML = '';
 
   const enCrm = new URLSearchParams({ agente: fichaAgente, ...(fichaPeriodo === 'fechas' ? { desde: r.desde, hasta: r.hasta } : { periodo: fichaPeriodo }) });
   if (q) enCrm.set('q', q);
@@ -399,21 +557,43 @@ async function cargarFicha() {
   }
 }
 
-async function abrirFicha(agentId: string) {
+/** "Ahora" de la ficha: lo real arriba, lo que se ve en la oficina abajo. Cada 3 s. */
+function pintarAhoraFicha() {
+  if (!fichaAgente || !ficha.classList.contains('abierta')) return;
+  const r = actividad.get(fichaAgente);
+  const v = vista.get(fichaAgente);
+  const real = ficha.querySelector<HTMLElement>('.ahora-real')!;
+  real.classList.toggle('trabajando', Boolean(r?.trabajando));
+  real.textContent = r?.trabajando
+    ? `Trabajando ahora: ${r.ultima?.texto ?? ''}`
+    : r?.ultima
+      ? `En espera. Última tarea ${hace(r.ultima.at)}: ${r.ultima.texto}`
+      : 'En espera. Sin tareas registradas esta semana.';
+  ficha.querySelector('.ahora-vista')!.textContent = v ? `En la oficina: ${textoVista(v.state, v.task)}` : '';
+}
+
+/** Con "Hoy" y sin búsqueda, la lista se pone al día sola. */
+function refrescarFicha() {
+  if (!fichaAgente || !ficha.classList.contains('abierta')) return;
+  if (fichaPeriodo !== 'hoy' || fichaQ.value.trim()) return;
+  cargarFicha(true);
+}
+setInterval(refrescarFicha, 20000);
+
+function abrirFicha(agentId: string) {
   if (!NOMBRE[agentId]) return;
   fichaAgente = agentId;
   ficha.querySelector('h2')!.textContent = NOMBRE[agentId];
   ficha.querySelector('.rol')!.textContent = ROL[NOMBRE[agentId]] ?? '';
-  const ahora = await fetch('/api/agents').then(r => r.json()).then((d: any) => (d.agents ?? []).find((a: any) => a.agent === agentId)).catch(() => null);
-  ficha.querySelector('.ahora')!.textContent = ahora
-    ? `Ahora: ${ESTADO[ahora.state] ?? ahora.state}${ahora.task ? ` · ${ahora.task}` : ''}`
-    : '';
   ficha.classList.add('abierta');
+  pintarAhoraFicha();
   cargarFicha();
 }
 
-ficha.querySelectorAll<HTMLElement>('[data-cerrar]').forEach(el => el.addEventListener('click', () => ficha.classList.remove('abierta')));
-document.addEventListener('keydown', e => { if (e.key === 'Escape') ficha.classList.remove('abierta'); });
+const cerrarFicha = () => { ficha.classList.remove('abierta'); fichaAgente = ''; };
+ficha.querySelectorAll<HTMLElement>('[data-cerrar]').forEach(el => el.addEventListener('click', cerrarFicha));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarFicha(); });
+ficha.querySelector('.actualizar')!.addEventListener('click', () => { pintarAhora(); cargarFicha(); });
 ficha.querySelectorAll<HTMLButtonElement>('button.periodo').forEach(b => b.addEventListener('click', () => {
   fichaPeriodo = b.dataset.periodo as Periodo;
   ficha.querySelectorAll('button.periodo').forEach(x => x.classList.toggle('activo', x === b));
@@ -424,7 +604,7 @@ ficha.querySelectorAll<HTMLButtonElement>('button.periodo').forEach(b => b.addEv
   }
   cargarFicha();
 }));
-[fichaDesde, fichaHasta].forEach(i => i.addEventListener('change', cargarFicha));
+[fichaDesde, fichaHasta].forEach(i => i.addEventListener('change', () => cargarFicha()));
 ficha.querySelector('form')!.addEventListener('submit', e => { e.preventDefault(); cargarFicha(); });
 
 main().catch(console.error);
