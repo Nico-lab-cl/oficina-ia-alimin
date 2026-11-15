@@ -158,17 +158,35 @@ async function main() {
   // real sale en globo blanco con borde verde; el ambiente (atento, repaso,
   // café, Michi) en una nube gris clara, para no confundirlos.
   const interno = mv as any;
-  type Globo = { c: any; texto: string; real: boolean; vida: number };
+  type Globo = { c: any; texto: string; real: boolean; charla: boolean; vida: number };
   const globos = new Map<string, Globo>();
-  const globo = (c: any, texto: string | null, real: boolean) => {
+  const globo = (c: any, texto: string | null, real: boolean, charla = false) => {
     if (!texto) return;
     const actual = globos.get(c.agentId);
-    if (actual?.real && !real) return; // el ambiente no tapa un trabajo real
-    globos.set(c.agentId, { c, texto: texto.length > 34 ? `${texto.slice(0, 33)}…` : texto, real, vida: real ? 7 : 4.5 });
+    // El ambiente no tapa un trabajo real ni una charla.
+    if ((actual?.real || actual?.charla) && !real && !charla) return;
+    globos.set(c.agentId, { c, texto: texto.length > 34 ? `${texto.slice(0, 33)}…` : texto, real, charla, vida: real ? 7 : charla ? 6 : 4.5 });
   };
   const lugares = () => interno.typedLocations;
   const ruta = () => interno.scene.pathfinder;
   const acariciando = new Map<string, { llego: boolean }>();
+  /** Quien camina a conversar: al llegar dice lo suyo y el otro le responde. */
+  const conversando = new Map<string, { llego: boolean; charlaId: number }>();
+
+  const irAEscritorio = (c: any, para: string) => {
+    const ancla = lugares().find((l: any) => l.name === PUESTO[para]);
+    if (!ancla) return;
+    const desde = c.getTilePosition();
+    let mejor: { x: number; y: number }[] = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [1, 1], [-1, 1]]) {
+      const p = ruta().findPath(desde.x, desde.y, ancla.x + dx, ancla.y + dy);
+      if (p.length > 1 && (!mejor.length || p.length < mejor.length)) mejor = p;
+    }
+    if (!mejor.length) return;
+    interno.reservation.release(c.agentId);
+    c.walkTo(mejor);
+    conversando.set(c.agentId, { llego: false, charlaId: 0 });
+  };
   let gato: Gato | null = null;
 
   const irAlGato = (c: any) => {
@@ -196,6 +214,9 @@ async function main() {
       c.goToAnchorType('utility', lugares(), ruta(), reservas, otros) || c.goToAnchorType('social', lugares(), ruta(), reservas, otros);
     } else if (a === 'speaking' && /^Gato:/.test(c.task ?? '')) {
       irAlGato(c);
+    } else if (a === 'speaking' && /^Charla:/.test(c.task ?? '')) {
+      const para = Object.keys(NOMBRE).find(id => (c.task ?? '').endsWith(NOMBRE[id]));
+      if (para) irAEscritorio(c, para);
     }
     if (a === 'working' && !esAmbiente(c.task)) {
       globo(c, c.task, true);
@@ -260,18 +281,18 @@ async function main() {
         const x = Math.max(2, Math.min(anchoMundo - w - 2, cx - w / 2));
         const y = base - h;
         ctx.beginPath();
-        ctx.roundRect(x, y, w, h, g.real ? 4 : 8);
-        ctx.fillStyle = g.real ? '#ffffff' : 'rgba(234,243,239,0.93)';
-        ctx.strokeStyle = g.real ? '#16a34a' : '#93b4a8';
+        ctx.roundRect(x, y, w, h, g.real ? 4 : g.charla ? 6 : 8);
+        ctx.fillStyle = g.real ? '#ffffff' : g.charla ? '#fff6dc' : 'rgba(234,243,239,0.93)';
+        ctx.strokeStyle = g.real ? '#16a34a' : g.charla ? '#d4a24c' : '#93b4a8';
         ctx.lineWidth = g.real ? 1.5 : 1;
         ctx.fill();
         ctx.stroke();
-        if (g.real) {
+        if (g.real || g.charla) {
           ctx.beginPath();
           ctx.moveTo(cx - 4, base); ctx.lineTo(cx, base + 6); ctx.lineTo(cx + 4, base);
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = g.real ? '#ffffff' : '#fff6dc';
           ctx.fill();
-          ctx.fillStyle = '#14532d';
+          ctx.fillStyle = g.real ? '#14532d' : '#6b4a12';
         } else {
           // Nube de pensamiento: dos burbujitas hacia el agente.
           ctx.beginPath(); ctx.arc(cx, base + 3, 2.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -297,6 +318,19 @@ async function main() {
     render: (ctx, dt: number) => {
       reloj += dt;
       // Quien va a acariciarlo: al llegar, Michi recibe los mimos.
+      // Charlas: al llegar al escritorio, uno dice lo suyo y el otro responde.
+      for (const [id, info] of conversando) {
+        const c = (mv.getCitizens() as any[]).find(x => x.agentId === id);
+        if (!c || c.state !== 'speaking' || !/^Charla:/.test(c.task ?? '')) { conversando.delete(id); continue; }
+        if (info.llego || c.isMoving()) continue;
+        const charla = charlaEnCurso;
+        if (!charla || charla.de !== id) continue;
+        info.llego = true;
+        info.charlaId = charla.id;
+        globo(c, charla.dice, false, true);
+        const otro = (mv.getCitizens() as any[]).find(x => x.agentId === charla.para);
+        if (otro && charla.responde) setTimeout(() => globo(otro, charla.responde, false, true), 3500);
+      }
       for (const [id, info] of acariciando) {
         const c = (mv.getCitizens() as any[]).find(x => x.agentId === id);
         if (!c || c.state !== 'speaking') { acariciando.delete(id); continue; }
@@ -362,7 +396,10 @@ async function main() {
   const pintarEstado = async () => {
     const [agentes, real] = await Promise.all([
       fetch('/api/agents').then(r => r.json()).then((d: any) => (d.agents ?? []) as Vista[]).catch(() => [] as Vista[]),
-      fetch('/api/actividad').then(r => r.json()).then((d: any) => (d.agentes ?? []) as Actividad[]).catch(() => null),
+      fetch('/api/actividad').then(r => r.json()).then((d: any) => {
+        charlaEnCurso = d.charla ?? null;
+        return (d.agentes ?? []) as Actividad[];
+      }).catch(() => null),
     ]);
     if (real) {
       for (const a of real) {
@@ -413,7 +450,32 @@ async function main() {
     if (registro.querySelector('li:not(.vacio)')) vacio?.remove();
     else if (!vacio) registro.innerHTML = '<li class="vacio">Todavía no hay movimiento. Cuando un agente trabaje, aparece aquí.</li>';
   };
-  await Promise.all([pintarEstado(), pintarEventos()]);
+  // --- Pizarra: notas y charlas que dejó el director (CRM web) ---
+  const listaPizarra = document.getElementById('pizarra')!;
+  const pintarPizarra = async () => {
+    const d: any = await fetch('/api/pizarra').then(r => r.json()).catch(() => ({ error: 'Sin conexión con la oficina' }));
+    const filas: { tipo: string; autor: string; para: string | null; texto: string; respuesta: string | null; created_at: string }[] = d.pizarra ?? [];
+    listaPizarra.innerHTML = '';
+    if (!filas.length) {
+      const li = document.createElement('li');
+      li.className = 'vacio';
+      li.textContent = d.error ?? 'Todavía no hay notas. Cada 15 minutos (de 8 a 23 h) los agentes conversan sobre lo que pasó y anotan lo importante.';
+      listaPizarra.appendChild(li);
+      return;
+    }
+    for (const f of filas.slice(0, 8)) {
+      const li = document.createElement('li');
+      li.className = f.tipo;
+      li.innerHTML = '<time></time><div><b></b><span></span></div>';
+      li.querySelector('time')!.textContent = new Date(f.created_at).toLocaleTimeString('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', hour12: false });
+      li.querySelector('b')!.textContent = f.tipo === 'nota' ? `📌 ${NOMBRE[f.autor] ?? f.autor}` : `${NOMBRE[f.autor] ?? f.autor} → ${NOMBRE[f.para ?? ''] ?? f.para}`;
+      li.querySelector('span')!.textContent = f.tipo === 'nota' ? f.texto : `«${f.texto}» — «${f.respuesta ?? ''}»`;
+      listaPizarra.appendChild(li);
+    }
+  };
+
+  await Promise.all([pintarEstado(), pintarEventos(), pintarPizarra()]);
+  setInterval(pintarPizarra, 60000);
   setInterval(pintarEstado, 3000);
   setInterval(pintarEventos, 3000);
 }
@@ -467,7 +529,10 @@ interface Actividad { agent: string; trabajando: boolean; ultima: { texto: strin
 const vista = new Map<string, Vista>();
 const actividad = new Map<string, Actividad>();
 let pintarAhora: () => void = () => {};
-const esAmbiente = (t: string | null) => !t || /^(Repasando|Estudiando|Atento|Café|Gato):/.test(t);
+const esAmbiente = (t: string | null) => !t || /^(Repasando|Estudiando|Pensando|Atento|Café|Gato|Charla):/.test(t);
+/** Charla en curso que manda el servidor (guion del director del CRM web). */
+interface Charla { id: number; de: string; para: string; dice: string; responde: string; at: number }
+let charlaEnCurso: Charla | null = null;
 
 /** Frase corta de ambiente para la nube gris (no es trabajo real). */
 const FRASES: Record<string, string[]> = {
@@ -481,6 +546,8 @@ function fraseAmbiente(agente: string, state: string, task: string | null) {
   const t = task ?? '';
   let m: RegExpMatchArray | null;
   if (/^Gato:/.test(t)) return unoDe(['¡Hola, Michi!', 'Michi ♥', '¿Quién es el gatito?']);
+  if (/^Charla:/.test(t)) return null;
+  if ((m = t.match(/^Pensando: (.*)/))) return `💭 ${m[1]}`;
   if ((m = t.match(/^Café: (.*)/))) return `☕ ${m[1]}`;
   if ((m = t.match(/^(?:Repasando|Estudiando): (.*)/))) return `Repaso: ${m[1]}`;
   if (/^Atento:/.test(t)) return unoDe(FRASES[agente] ?? ['Atento']);
@@ -493,6 +560,8 @@ function textoVista(state: string, task: string | null) {
   let m: RegExpMatchArray | null;
   if ((m = task.match(/^Atento: (.*)/))) return `en su puesto · atento ${m[1]}`;
   if ((m = task.match(/^(?:Repasando|Estudiando): (.*)/))) return `en su puesto · repasando ${m[1]}`;
+  if ((m = task.match(/^Pensando: (.*)/))) return `en su puesto · pensando: ${m[1]}`;
+  if ((m = task.match(/^Charla: (.*)/))) return `conversando ${m[1]}`;
   if ((m = task.match(/^Café: (.*)/))) return `en la cafetería · ${m[1]}`;
   if ((m = task.match(/^Gato: (.*)/))) return m[1];
   return `trabajando · ${task}`;

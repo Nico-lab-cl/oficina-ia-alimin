@@ -123,7 +123,7 @@ server.store.heartbeat = data => {
 
 const LECTURA = new Set(['/api/info', '/api/agents', '/api/events', '/api/channels']);
 /** Ambiente de oficina (sin trabajo real): nunca va al historial ni a "Actividad real". */
-const AMBIENTE = /^(Repasando|Estudiando|Atento|Café|Gato):/;
+const AMBIENTE = /^(Repasando|Estudiando|Pensando|Atento|Café|Gato|Charla):/;
 const ESCRITURA = new Set(['/api/heartbeat', '/api/act']);
 
 server.handleHttp = async (req, res) => {
@@ -161,7 +161,22 @@ server.handleHttp = async (req, res) => {
     return original(req, res);
   }
 
-  // Modo "Actividad real": qué está haciendo de verdad cada agente.
+  // Guion del director (CRM web, lib/oficina_director.ts): pensamientos,
+  // charlas entre agentes y notas de la pizarra. Solo los servicios.
+  if (req.method === 'POST' && pathname === '/api/escena') {
+    if (quien !== 'servicio') {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Solo los agentes de Alimin pueden escribir aquí.');
+      return;
+    }
+    recibirEscena(await leerAviso(req));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{"ok":true}');
+    return;
+  }
+
+  // Modo "Actividad real": qué está haciendo de verdad cada agente. Trae
+  // también la charla en curso, para que la página ponga los globos.
   if (req.method === 'GET' && pathname === '/api/actividad') {
     const ahora = Date.now();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -170,8 +185,13 @@ server.handleHttp = async (req, res) => {
         const u = ultimaTarea.get(a.agent) ?? null;
         return { agent: a.agent, trabajando: Boolean(u && ahora - u.at < TRABAJO_REAL_MS), ultima: u };
       }),
+      charla: charlaActual && ahora - charlaActual.at < CHARLA_MS ? charlaActual : null,
     }));
     return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/pizarra') {
+    return pizarra(res);
   }
 
   // Ficha de un agente: lo que hizo en las fechas pedidas (sin datos de clientes).
@@ -398,7 +418,7 @@ function siguiente(agente, noche, anterior) {
     return { tipo: 'gato', state: 'speaking', task: 'Gato: acariciando a Michi', ms: azar(16, 24) * 1000 };
   }
   if (!descanso && r < pCafe) return { tipo: 'cafe', state: 'thinking', task: `Café: ${unoDe(CAFES)}`, ms: azar(25, 40) * 1000 };
-  if (r < 0.7) return { tipo: 'repaso', state: 'working', task: `Repasando: ${temaAlAzar(agente)}`, ms: azar(30, 60) * 1000 };
+  if (r < 0.7) return { tipo: 'repaso', state: 'working', task: repasoO(agente), ms: azar(30, 60) * 1000 };
   return { tipo: 'puesto', state: 'working', task: ATENTO[agente], ms: azar(35, 75) * 1000 };
 }
 
@@ -407,6 +427,7 @@ function rutina() {
   const estado = new Map(server.store.getAll().map(a => [a.agent, a]));
   const noche = esNoche();
   if (conMichi && plan.get(conMichi)?.tipo !== 'gato') conMichi = null;
+  if (!noche) empezarCharla(ahora);
   for (const a of AGENTES) {
     const actual = estado.get(a.agent);
     if (ahora - (ultimoReal.get(a.agent) ?? 0) < TRABAJO_REAL_MS && actual) continue;
@@ -420,7 +441,7 @@ function rutina() {
         continue;
       }
       if (vigente && ahora < vigente.hasta && actual?.state === 'working') continue;
-      latido({ ...a, state: 'working', task: `Repasando: ${temaAlAzar(a.agent)}` });
+      latido({ ...a, state: 'working', task: repasoO(a.agent) });
       plan.set(a.agent, { hasta: ahora + azar(40, 90) * 1000, tipo: 'repaso' });
       continue;
     }
@@ -433,6 +454,81 @@ function rutina() {
     const s = siguiente(a.agent, noche, vigente?.tipo);
     plan.set(a.agent, { hasta: ahora + s.ms, tipo: s.tipo });
     latido({ ...a, state: s.state, task: s.task });
+  }
+}
+
+/**
+ * Lo que piensa y conversa cada uno (Nicolás, 14-11-2026). El director del
+ * CRM web (Haiku, cada 15 min de día) manda un guion con lo que pasó hoy:
+ * - pensamientos: reemplazan a veces los temas de repaso (nube gris).
+ * - charlas: uno camina al escritorio del otro y conversan (globos crema).
+ * - notas: van a la pizarra (el CRM las guarda; aquí solo se muestran).
+ * Sigue siendo ambiente: no va al historial ni a "Actividad real".
+ */
+const pensamientos = new Map();
+const charlas = [];
+let charlaActual = null;
+let proximaCharla = 0;
+const CHARLA_MS = 45 * 1000;
+const PENSAMIENTO_MS = 30 * 60 * 1000;
+const textoCorto = (t, max = 60) => String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+
+function recibirEscena(e) {
+  if (!e || typeof e !== 'object') return;
+  const ahora = Date.now();
+  for (const p of Array.isArray(e.pensamientos) ? e.pensamientos : []) {
+    if (NOMBRES[p?.agent ?? p?.agente] && textoCorto(p.texto)) pensamientos.set(p.agente ?? p.agent, { texto: textoCorto(p.texto), at: ahora });
+  }
+  for (const c of (Array.isArray(e.charlas) ? e.charlas : []).slice(0, 3)) {
+    if (!ATIENDEN.has(c?.de) || !NOMBRES[c?.para] || c.de === c.para || !textoCorto(c.dice)) continue;
+    charlas.push({ de: c.de, para: c.para, dice: textoCorto(c.dice), responde: textoCorto(c.responde) });
+  }
+  while (charlas.length > 4) charlas.shift();
+  if (Array.isArray(e.notas) && e.notas.length) pizarraCache = null; // la próxima lectura trae la nota nueva
+}
+
+/** La próxima charla de la cola, si quien camina está libre. Una cada 2–4 minutos. */
+function empezarCharla(ahora) {
+  if (charlaActual && ahora - charlaActual.at < CHARLA_MS) return;
+  charlaActual = null;
+  if (!charlas.length || ahora < proximaCharla) return;
+  const c = charlas[0];
+  if (ahora - (ultimoReal.get(c.de) ?? 0) < TRABAJO_REAL_MS) return; // está atendiendo: espera
+  charlas.shift();
+  if (conMichi === c.de) conMichi = null;
+  charlaActual = { ...c, id: ahora, at: ahora };
+  proximaCharla = ahora + azar(120, 240) * 1000;
+  plan.set(c.de, { hasta: ahora + CHARLA_MS, tipo: 'charla' });
+  latido({ agent: c.de, name: NOMBRES[c.de], state: 'speaking', task: `Charla: con ${NOMBRES[c.para]}` });
+}
+
+/** Tema de repaso: a veces lo que el director dijo que tiene en la cabeza. */
+function repasoO(agente) {
+  const p = pensamientos.get(agente);
+  if (p && Date.now() - p.at < PENSAMIENTO_MS && Math.random() < 0.6) return `Pensando: ${p.texto}`;
+  return `Repasando: ${temaAlAzar(agente)}`;
+}
+
+let pizarraCache = null;
+async function pizarra(res) {
+  const responder = cuerpo => {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(cuerpo));
+  };
+  if (pizarraCache && Date.now() - pizarraCache.at < 60 * 1000) return responder(pizarraCache.datos);
+  try {
+    const r = await fetch(`${CRM}/api/webhooks/ia/oficina/pizarra?limite=12`, {
+      headers: { 'x-ia-secret': SECRETO },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (r.status === 404) throw new Error('el CRM web todavía no tiene la pizarra (falta implementarlo en EasyPanel)');
+    if (!r.ok) throw new Error(`el CRM respondió ${r.status}`);
+    const datos = await r.json();
+    pizarraCache = { at: Date.now(), datos };
+    responder(datos);
+  } catch (error) {
+    // Con 200: EasyPanel cambia las respuestas 5xx por su propia página.
+    responder({ error: `No se pudo leer la pizarra: ${error.message}.` });
   }
 }
 

@@ -70,6 +70,13 @@
     #registro li { display: grid; grid-template-columns: 48px 140px 1fr; gap: 8px; }
     #registro li.vacio { display: block; color: #9bb3a8; }
     #registro time { color: #9bb3a8; }
+    .pizarra { list-style: none; display: grid; gap: 8px; font-size: 13px; }
+    .pizarra li { display: grid; grid-template-columns: 48px 1fr; gap: 8px; }
+    .pizarra li.vacio { display: block; color: #9bb3a8; }
+    .pizarra time { color: #9bb3a8; }
+    .pizarra b { display: block; color: #d4a24c; font-weight: normal; font-size: 12px; }
+    .pizarra li.nota b { color: #fbbf24; }
+    .pizarra span { color: #e6efe9; line-height: 1.4; }
     #registro b { color: #4caf50; }
     .nota { font-size: 11px; color: #6f8a7f; text-align: center; max-width: 640px; }
     .status-bar .agent { cursor: pointer; }
@@ -158,7 +165,7 @@
     <button id="modo-real" type="button" aria-pressed="false">Ver actividad real</button>
     <details class="ayuda">
       <summary>Cómo funciona</summary>
-      <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre están siempre encendidos y atentos en su oficina, de día y de noche; de vez en cuando se paran por un café o a acariciar a Michi, el gato. Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y de noche dormitan en su silla. El globo blanco con borde verde es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador; la nube gris es solo ambiente (atento, repaso, café, Michi). El botón "Ver actividad real" muestra solo lo que cada IA hizo de verdad.</p>
+      <p class="subtitle">Ali - Interacción, Ali - Calificador y Ali - Cierre están siempre encendidos y atentos en su oficina, de día y de noche; de vez en cuando se paran por un café o a acariciar a Michi, el gato. Ali - Competencia, Ali - Anuncios y Ali - Mercado no se levantan de su notebook: investigan la web cada mañana y de noche dormitan en su silla. El globo blanco con borde verde es trabajo real: un chat que responde Ali, una conversación que puntúa el Calificador, un correo post-visita de Cierre o lo que encontró un investigador; la nube gris es solo ambiente (atento, repaso, café, Michi). Cada 15 minutos de día los agentes piensan y conversan sobre lo que pasó (globo crema) y anotan lo importante en la pizarra. El botón "Ver actividad real" muestra solo lo que cada IA hizo de verdad.</p>
     </details>
   </header>
   <p class="aviso-real">Actividad real: la etiqueta sobre cada agente dice si está trabajando ahora (verde) o en espera, con el tiempo desde su última tarea. Abajo, su última tarea real.</p>
@@ -167,6 +174,10 @@
   <section class="registro">
     <h2>Lo que están haciendo</h2>
     <ol id="registro"></ol>
+  </section>
+  <section class="registro">
+    <h2>Pizarra de la oficina</h2>
+    <ol id="pizarra" class="pizarra"></ol>
   </section>
   <p class="nota">Sin datos de clientes: solo se muestra el canal y la acción. Oficina basada en Miniverse (MIT).</p>
   <div id="ficha" role="dialog" aria-modal="true" aria-labelledby="ficha-nombre">
