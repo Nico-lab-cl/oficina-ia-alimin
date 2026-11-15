@@ -154,8 +154,18 @@ async function main() {
   // - Café: en la cafetería, un rato corto.
   // - Gato: va a acariciar a Michi (server.js lo manda como 'speaking' para
   //   que quede de pie y gesticulando).
-  // El globo de diálogo es solo para trabajo real, no para el ambiente.
+  // Globos (Nicolás, 14-11-2026): siempre hay alguno a la vista. El trabajo
+  // real sale en globo blanco con borde verde; el ambiente (atento, repaso,
+  // café, Michi) en una nube gris clara, para no confundirlos.
   const interno = mv as any;
+  type Globo = { c: any; texto: string; real: boolean; vida: number };
+  const globos = new Map<string, Globo>();
+  const globo = (c: any, texto: string | null, real: boolean) => {
+    if (!texto) return;
+    const actual = globos.get(c.agentId);
+    if (actual?.real && !real) return; // el ambiente no tapa un trabajo real
+    globos.set(c.agentId, { c, texto: texto.length > 34 ? `${texto.slice(0, 33)}…` : texto, real, vida: real ? 7 : 4.5 });
+  };
   const lugares = () => interno.typedLocations;
   const ruta = () => interno.scene.pathfinder;
   const acariciando = new Map<string, { llego: boolean }>();
@@ -188,7 +198,9 @@ async function main() {
       irAlGato(c);
     }
     if (a === 'working' && !esAmbiente(c.task)) {
-      interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, 4, c);
+      globo(c, c.task, true);
+    } else if (esAmbiente(c.task)) {
+      globo(c, fraseAmbiente(c.agentId, c.state, c.task), false);
     } else if (a === 'error') {
       interno.particles.emitExclamation(c.x + 16, c.y - c.getSittingOffset());
     }
@@ -208,8 +220,9 @@ async function main() {
         if (c.state === 'thinking' || c.state === 'speaking') interno.handleStateTransition(c, '', c.state);
       }
       const previo = antes.get(c.agentId);
-      if (!previo || previo.state !== 'working' || c.state !== 'working' || esAmbiente(c.task)) continue;
-      if (previo.task !== c.task) interno.speechBubbles.show(c.x + 16, c.y - 8 - c.getSittingOffset(), c.task, 5, c);
+      if (!previo || previo.state !== c.state || previo.task === c.task) continue;
+      if (c.state === 'working' && !esAmbiente(c.task)) globo(c, c.task, true);
+      else globo(c, fraseAmbiente(c.agentId, c.state, c.task), false);
     }
   };
 
@@ -217,6 +230,59 @@ async function main() {
 
   mv.addLayer({ order: 5, render: (ctx) => props.renderBelow(ctx) });
   mv.addLayer({ order: 15, render: (ctx) => props.renderAbove(ctx) });
+
+  // --- Globos: se dibujan sobre el nombre de cada agente ---
+  const proximo = new Map<string, number>();
+  const anchoMundo = gridCols * tileSize;
+  mv.addLayer({
+    order: 26,
+    render: (ctx, dt: number) => {
+      // Cada tanto, una nube de ambiente para el que no tiene globo.
+      for (const c of mv.getCitizens() as any[]) {
+        const falta = (proximo.get(c.agentId) ?? 1 + Math.random() * 6) - dt;
+        if (falta > 0) { proximo.set(c.agentId, falta); continue; }
+        proximo.set(c.agentId, 7 + Math.random() * 9);
+        if (!globos.has(c.agentId)) globo(c, fraseAmbiente(c.agentId, c.state, c.task), false);
+      }
+      for (const [id, g] of globos) {
+        g.vida -= dt;
+        if (g.vida <= 0) { globos.delete(id); continue; }
+        const c = g.c;
+        if (!c.visible) continue;
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, g.vida / 0.5);
+        ctx.font = g.real ? 'bold 9px monospace' : '9px monospace';
+        const w = Math.ceil(ctx.measureText(g.texto).width) + 12;
+        const h = 16;
+        const cx = c.x + tileSize / 2;
+        // Los de arriba no tienen espacio sobre la cabeza: el globo no se sale del borde.
+        const base = Math.max(h + 3, c.y - c.frameHeight + tileSize - 16 - c.getSittingOffset() - (modoReal ? 12 : 0));
+        const x = Math.max(2, Math.min(anchoMundo - w - 2, cx - w / 2));
+        const y = base - h;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, g.real ? 4 : 8);
+        ctx.fillStyle = g.real ? '#ffffff' : 'rgba(234,243,239,0.93)';
+        ctx.strokeStyle = g.real ? '#16a34a' : '#93b4a8';
+        ctx.lineWidth = g.real ? 1.5 : 1;
+        ctx.fill();
+        ctx.stroke();
+        if (g.real) {
+          ctx.beginPath();
+          ctx.moveTo(cx - 4, base); ctx.lineTo(cx, base + 6); ctx.lineTo(cx + 4, base);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.fillStyle = '#14532d';
+        } else {
+          // Nube de pensamiento: dos burbujitas hacia el agente.
+          ctx.beginPath(); ctx.arc(cx, base + 3, 2.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.arc(cx + 2, base + 8, 1.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#3f5f55';
+        }
+        ctx.fillText(g.texto, x + 6, y + 11.5);
+        ctx.restore();
+      }
+    },
+  });
 
   // --- Michi, el gato de la oficina ---
   // Pasea por el pasillo y la cafetería, duerme siestas y recibe mimos.
@@ -402,6 +468,24 @@ const vista = new Map<string, Vista>();
 const actividad = new Map<string, Actividad>();
 let pintarAhora: () => void = () => {};
 const esAmbiente = (t: string | null) => !t || /^(Repasando|Estudiando|Atento|Café|Gato):/.test(t);
+
+/** Frase corta de ambiente para la nube gris (no es trabajo real). */
+const FRASES: Record<string, string[]> = {
+  ali: ['Atento a Instagram', 'Atento al chat web', 'Atento a Facebook'],
+  calificador: ['Atento a chats nuevos', 'Atento al lead score'],
+  cierre: ['Atento a las visitas', 'Atento a los correos'],
+};
+const unoDe = <T,>(l: T[]) => l[Math.floor(Math.random() * l.length)];
+function fraseAmbiente(agente: string, state: string, task: string | null) {
+  if (state === 'sleeping') return 'Zzz…';
+  const t = task ?? '';
+  let m: RegExpMatchArray | null;
+  if (/^Gato:/.test(t)) return unoDe(['¡Hola, Michi!', 'Michi ♥', '¿Quién es el gatito?']);
+  if ((m = t.match(/^Café: (.*)/))) return `☕ ${m[1]}`;
+  if ((m = t.match(/^(?:Repasando|Estudiando): (.*)/))) return `Repaso: ${m[1]}`;
+  if (/^Atento:/.test(t)) return unoDe(FRASES[agente] ?? ['Atento']);
+  return null;
+}
 
 function textoVista(state: string, task: string | null) {
   if (state === 'sleeping') return 'durmiendo (de noche)';

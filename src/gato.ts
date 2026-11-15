@@ -76,6 +76,7 @@ const DUERME_2 = DUERME_1.map((f, i) => (i === 6 ? '.....kkdoodokooooook' : i ==
 export const CUADROS = { CAMINA_1, CAMINA_2, SENTADO_1, SENTADO_2, DUERME_1, DUERME_2 };
 export type Cuadro = keyof typeof CUADROS;
 
+const ESCALA = 1.5;
 const cache = new Map<string, HTMLCanvasElement>();
 function lienzo(nombre: Cuadro, espejo: boolean) {
   const clave = `${nombre}:${espejo}`;
@@ -216,19 +217,22 @@ export class Gato {
     else if (this.modo === 'duerme') cuadro = Math.floor(t * 1.2) % 2 ? 'DUERME_2' : 'DUERME_1';
     else cuadro = Math.floor(t * (this.modo === 'mimos' ? 3 : 0.8)) % 2 ? 'SENTADO_2' : 'SENTADO_1';
     const img = lienzo(cuadro, this.mira < 0);
-    // Centrado en la baldosa, con las patas en el borde de abajo.
-    const dx = Math.round(this.x + (this.tile - img.width) / 2);
-    const dy = Math.round(this.y + this.tile - img.height - 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.fillRect(dx + 3, dy + img.height - 1, img.width - 6, 2);
-    ctx.drawImage(img, dx, dy);
+    // Centrado en la baldosa, con las patas en el borde de abajo. Un poco más
+    // grande que el dibujo para que se note en la oficina (Nicolás, 14-11-2026).
+    const w = Math.round(img.width * ESCALA), h = Math.round(img.height * ESCALA);
+    const dx = Math.round(this.x + (this.tile - w) / 2);
+    const dy = Math.round(this.y + this.tile - h - 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(dx + 4, dy + h - 2, w - 8, 3);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, dx, dy, w, h);
     if (this.modo === 'duerme' && Math.floor(t * 0.7) % 2) {
-      ctx.font = 'bold 8px monospace';
+      ctx.font = 'bold 9px monospace';
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 0.5;
-      ctx.strokeText('z', dx + img.width - 2, dy - 1);
-      ctx.fillText('z', dx + img.width - 2, dy - 1);
+      ctx.strokeText('z', dx + w - 2, dy - 1);
+      ctx.fillText('z', dx + w - 2, dy - 1);
     }
     for (const c of this.corazones) {
       ctx.save();

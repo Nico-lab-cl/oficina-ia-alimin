@@ -387,15 +387,19 @@ const plan = new Map();
 let conMichi = null;
 
 function siguiente(agente, noche, anterior) {
+  // Que se vean caminar seguido (Nicolás, 14-11-2026): de día, uno de cada
+  // dos ratos libres es un café o una visita a Michi; de noche, menos.
   const r = Math.random();
   const descanso = anterior === 'gato' || anterior === 'cafe';
-  if (!noche && !descanso && !conMichi && r < 0.12) {
+  const pGato = noche ? 0.12 : 0.28;
+  const pCafe = pGato + (noche ? 0.1 : 0.22);
+  if (!descanso && !conMichi && r < pGato) {
     conMichi = agente;
-    return { tipo: 'gato', state: 'speaking', task: 'Gato: acariciando a Michi', ms: azar(14, 20) * 1000 };
+    return { tipo: 'gato', state: 'speaking', task: 'Gato: acariciando a Michi', ms: azar(16, 24) * 1000 };
   }
-  if (!noche && !descanso && r < 0.2) return { tipo: 'cafe', state: 'thinking', task: `Café: ${unoDe(CAFES)}`, ms: azar(25, 45) * 1000 };
-  if (r < 0.5) return { tipo: 'repaso', state: 'working', task: `Repasando: ${temaAlAzar(agente)}`, ms: azar(40, 90) * 1000 };
-  return { tipo: 'puesto', state: 'working', task: ATENTO[agente], ms: azar(60, 150) * 1000 };
+  if (!descanso && r < pCafe) return { tipo: 'cafe', state: 'thinking', task: `Café: ${unoDe(CAFES)}`, ms: azar(25, 40) * 1000 };
+  if (r < 0.7) return { tipo: 'repaso', state: 'working', task: `Repasando: ${temaAlAzar(agente)}`, ms: azar(30, 60) * 1000 };
+  return { tipo: 'puesto', state: 'working', task: ATENTO[agente], ms: azar(35, 75) * 1000 };
 }
 
 function rutina() {
